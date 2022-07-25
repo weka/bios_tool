@@ -106,7 +106,7 @@ Using the --dump command line option will cause the tool to simply print out all
 Using the --diff option will compare all the settings on 2 servers, and print out which settings differ.
 
 Example diff output:
-```ignore
+```angular2html
 Fetching BIOS settings of host 172.29.3.1
 Fetching BIOS settings of host 172.29.3.6
 
