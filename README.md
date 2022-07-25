@@ -81,16 +81,16 @@ Example output:
 Fetching BIOS settings of host 172.29.3.1
 Fetching BIOS settings of host 172.29.3.2
 Fetching BIOS settings of host 172.29.3.3
-<snip>
+[...snip...]
 No changes are needed on 172.29.3.1
 No changes are needed on 172.29.3.2
 No changes are needed on 172.29.3.3
-<snip>
+[...snip...]
 172.29.3.4: BIOS setting ApplicationPowerBoost is Enabled, but should be Disabled
 172.29.3.4: BIOS setting CStateEfficiencyMode is Enabled, but should be Disabled
 172.29.3.4: BIOS setting DataFabricCStateEnable is Auto, but should be Disabled
 172.29.3.4: BIOS setting DeterminismControl is DeterminismCtrlAuto, but should be DeterminismCtrlManual
-<snip>
+[...snip...]
 ```
 
 ## Optional Behaviors
