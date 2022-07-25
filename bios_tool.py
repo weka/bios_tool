@@ -113,7 +113,11 @@ def main():
     if args.diff:
         hostlist = list()
         for c_host in args.diff:
-            hostlist.append([x for x in conf['hosts'] if x['name'] == c_host][0])
+            try:
+                hostlist.append([x for x in conf['hosts'] if x['name'] == c_host][0])
+            except:
+                log.error(f"host {c_host} not in {args.hostconfigfile}")
+                sys.exit(1)
     else:
         hostlist = conf['hosts']
 
