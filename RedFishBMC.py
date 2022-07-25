@@ -14,7 +14,15 @@ class RedFishBMC(object):
 
         # login
         self.name = hostname
-        self.redfish.login(auth="session")
+        try:
+            self.redfish.login(auth="session")
+        except redfish.rest.v1.InvalidCredentialsError:
+            log.error(f"Error logging into {hostname} - invalid credentials")
+            raise
+        except Exception as exc:
+            log.error(f"Error logging into {hostname}: {exc}")
+            raise
+
 
         # get the Vendor ID
         self.vendor = next(iter(self.redfish.root.get("Oem", {}).keys()), None)

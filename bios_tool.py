@@ -30,18 +30,40 @@ def bios_diff(hostlist):
     hosta = hostlist[0]
     hostb = hostlist[1]
 
-    hosta_bios = hosta['BMC'].bios_data.dict['Attributes']
-    hostb_bios = hostb['BMC'].bios_data.dict['Attributes']
+    hosta_bios = hosta.bios_data.dict['Attributes']
+    hostb_bios = hostb.bios_data.dict['Attributes']
+
+    if hosta.arch != hostb.arch:
+        print()
+        print("WARNING: Hosts are of different architectures!")
 
     diff = list()
+    settings_not_present = list()
     for setting, value in hosta_bios.items():
-        if hostb_bios[setting] != value:
+        if setting not in hostb_bios:
+            settings_not_present.append([setting, value, "setting not present"])
+        elif hostb_bios[setting] != value:
             diff.append([setting, value, hostb_bios[setting]])
 
+    # check for settings in b that are not in a
+    for setting, value in hostb_bios.items():
+        if setting not in hosta_bios:
+            settings_not_present.append([setting, "setting not present", value])
+
+    are_different = False
     if len(diff) > 0:
-        log.info(tabulate(diff, headers=["Setting", hosta['name'], hostb['name']]))
-        return True
-    return False
+        print()
+        print("Settings that are different between the servers:")
+        print(tabulate(diff, headers=["Setting", hosta.name, hostb.name]))
+        are_different = True
+
+    if len(settings_not_present) > 0:
+        print()
+        print("Settings that are in one server and not the other:")
+        print(tabulate(settings_not_present, headers=["Setting", hosta.name, hostb.name]))
+        are_different = True
+
+    return are_different
 
 
 def main():
@@ -96,20 +118,25 @@ def main():
         hostlist = conf['hosts']
 
     # connect to all the hosts
+    redfish_list = list()
     for host in hostlist:
         log.info(f"Fetching BIOS settings of host {host['name']}")
-        host['BMC'] = RedFishBMC(host['name'], username=host['user'], password=host['password'])
+        try:
+            redfish_list.append(RedFishBMC(host['name'], username=host['user'], password=host['password']))
+        except:
+            pass
 
     if args.diff:
-        if not bios_diff(hostlist):
+        if len(redfish_list) != 2:
+            log.error(f"hostlist has too few members to continue")
+        elif not bios_diff(redfish_list):
             log.info("The servers have identical BIOS settings")
     else:
         # check BIOS settings
         hosts_needing_changes = 0
         fixed_hosts = 0
         systems_rebooted = 0
-        for host in hostlist:
-            bmc = host['BMC']
+        for bmc in redfish_list:
             if args.dump:
                 bmc.print_settings()
                 continue
@@ -117,7 +144,7 @@ def main():
                 count = bmc.check_settings(desired_bios_settings[bmc.vendor][bmc.arch])
             log.info(f"")
             if count > 0:
-                log.warning(f"{count} changes are needed on {host['name']}")
+                log.warning(f"{count} changes are needed on {bmc.name}")
                 hosts_needing_changes += 1
                 if args.fix:
                     if bmc.change_settings(desired_bios_settings[bmc.vendor][bmc.arch]):
@@ -126,7 +153,7 @@ def main():
                             if bmc.reboot():
                                 systems_rebooted += 1
             else:
-                log.warning(f"No changes are needed on {host['name']}")
+                log.warning(f"No changes are needed on {bmc.name}")
 
         if not args.fix:
             log.info(f"There are {hosts_needing_changes} hosts needing changes")
@@ -136,8 +163,8 @@ def main():
             else:
                 log.info(f"{systems_rebooted} have been successfully modified and rebooted.")
 
-    for host in hostlist:
-        host['BMC'].redfish.logout()
+    for host in redfish_list:
+        host.redfish.logout()
 
 
 if __name__ == '__main__':
