@@ -65,7 +65,7 @@ def main():
     #                    help="Display version number")
 
     # these next args are passed to the script and parsed in etc/preamble - this is more for syntax checking
-    parser.add_argument("-v", "--verbose", dest='verbosity', action='store_true', help="enable verbose mode")
+    #parser.add_argument("-v", "--verbose", dest='verbosity', action='store_true', help="enable verbose mode")
 
     args = parser.parse_args()
 

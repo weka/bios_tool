@@ -1,12 +1,12 @@
 hosts:
-#  # Hpe servers
-#  - name: 172.29.3.1
-#    user: Administrator
-#    password: Administrator
-#  - name: 172.29.3.2
-#    user: Administrator
-#    password: Administrator
-#  - name: 172.29.3.3
+  # Hpe servers
+  - name: 172.29.3.1
+    user: Administrator
+    password: Administrator
+  - name: 172.29.3.2
+    user: Administrator
+    password: Administrator
+  - name: 172.29.3.3
 #    user: Administrator
 #    password: Administrator
 #  - name: 172.29.3.4
