@@ -134,7 +134,8 @@ class RedFishBMC(object):
         action = self.systems_members_response.obj.Actions['#ComputerSystem.Reset']['target']
         # print(json.dumps(self.systems_members_response.obj.Actions['#ComputerSystem.Reset']))
         body = dict()
-        body['ResetType'] = 'ForceRestart'
+        #body['ResetType'] = 'ForceRestart'
+        body['ResetType'] = 'GracefulRestart'
         resp = self.redfish.post(action, body=body)
         if resp.status != 200:
             log.error(f"An http response of '{resp.status}' was returned attempting to reboot {self.name}.\n")
