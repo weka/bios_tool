@@ -82,7 +82,9 @@ def main():
                         help="Reboot server if changes have been made")
     parser.add_argument("--dump", dest="dump", default=False, action="store_true",
                         help="Print out BIOS settings only")
-    parser.add_argument("--diff", dest="diff", nargs=2, default=False, help="Compare 2 hosts")
+    parser.add_argument("--reset_bios", dest="reset_bios", default=False, action="store_true",
+                        help="Reset BIOS to default settings.  To also reboot, add the --reboot option")
+    parser.add_argument("--diff", dest="diff", nargs=2, default=False, help="Compare 2 hosts BIOS settings")
     # parser.add_argument("--version", dest="version", default=False, action="store_true",
     #                    help="Display version number")
 
@@ -107,7 +109,7 @@ def main():
     try:
         desired_bios_settings = _load_config(args.bios)
     except Exception as exc:
-        log.error(f"Unable to bios settings configuration file: {exc}")
+        log.error(f"Unable to parse bios settings configuration file: {exc}")
         sys.exit(1)
 
     if args.diff:
@@ -127,14 +129,22 @@ def main():
         log.info(f"Fetching BIOS settings of host {host['name']}")
         try:
             redfish_list.append(RedFishBMC(host['name'], username=host['user'], password=host['password']))
-        except:
-            pass
+        except Exception as exc:
+            log.error(f"Error opening connections to {host['name']}")
+        # redfish_list.append(RedFishBMC(host['name'], username=host['user'], password=host['password']))
 
     if args.diff:
         if len(redfish_list) != 2:
             log.error(f"hostlist has too few members to continue")
         elif not bios_diff(redfish_list):
             log.info("The servers have identical BIOS settings")
+    elif args.reset_bios:
+        for bmc in redfish_list:
+            bmc.reset_settings_to_default()
+            log.info(f"{bmc.name} has been reset to factory defaults")
+            if args.reboot:
+                bmc.reboot()
+                log.info(f"{bmc.name} has been rebooted")
     else:
         # check BIOS settings
         hosts_needing_changes = 0

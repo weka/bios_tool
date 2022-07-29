@@ -23,7 +23,6 @@ class RedFishBMC(object):
             log.error(f"Error logging into {hostname}: {exc}")
             raise
 
-
         # get the Vendor ID
         self.vendor = next(iter(self.redfish.root.get("Oem", {}).keys()), None)
 
@@ -38,7 +37,6 @@ class RedFishBMC(object):
         self.proc_data = self.redfish.get(self.proc_uri)
         self.proc_members_uri = next(iter(self.proc_data.dict['Members']))['@odata.id']
         self.proc_members_response = self.redfish.get(self.proc_members_uri)  # ie: /redfish/v1/Processors/1
-
         # note the architecture
         self.arch = "AMD" if self.proc_members_response.dict.get("Model", None)[0] == 'A' else "Intel"
 
@@ -46,7 +44,36 @@ class RedFishBMC(object):
         self.bios_uri = self.systems_members_response.dict['Bios']['@odata.id']
         self.bios_data = self.redfish.get(self.bios_uri)  # ie: /redfish/v1/Systems/1/Bios
 
+        self.bios_actions_dict = self.bios_data.dict['Actions']
+        self.reset_bios_uri = self.bios_actions_dict['#Bios.ResetBios']['target']
         self.bios_settings_uri = self.bios_data.dict['@Redfish.Settings']['SettingsObject']['@odata.id']
+
+    def get_cdrom_info(self):
+        # get the Virtual CDROM
+        self.managers_uri = self.redfish.root['Managers']['@odata.id']
+        self.managers_data = self.redfish.get(self.managers_uri)
+        self.managers_members_uri = next(iter(self.managers_data.dict['Members']))['@odata.id']
+        self.managers_members_response = self.redfish.get(self.managers_members_uri)  # ie: /redfish/v1/Managers/1
+        self.virtual_media_uri = self.managers_members_response.dict['VirtualMedia']['@odata.id']
+        self.virtual_media_data = self.redfish.get(self.virtual_media_uri)  # ie: /redfish/v1/Managers/1/VirtualMedia
+        self.virtual_media_list = list()
+        for device in self.virtual_media_data.dict['Members']:
+            vdev = self.redfish.get(device['@odata.id'])
+            # self.virtual_media_list.append(self.redfish.get(device['@odata.id']))
+            for mediatype in vdev.obj.MediaTypes:
+                if mediatype == 'CD' or mediatype == "DVD":
+                    # found it!
+                    self.cdrom_uri = device['@odata.id']
+                    self.cdrom_dev = vdev
+                    self.cdrom_mount_uri = vdev.dict['Actions']['#VirtualMedia.InsertMedia']['target']
+                    self.cdrom_eject_uri = vdev.dict['Actions']['#VirtualMedia.EjectMedia']['target']
+                    break
+
+    def mount_cd(self, target):
+        pass
+
+    def eject_cd(self):
+        pass
 
     def change_settings(self, settings_dict):
 
@@ -73,6 +100,9 @@ class RedFishBMC(object):
         return False
 
     def check_settings(self, settings):
+        if settings is None:
+            log.info(f"{self.name} There are no settings for this platform in the bios settings configuration file")
+            return 0
         vendor = self.vendor
         arch = self.arch
         count = 0
@@ -86,6 +116,15 @@ class RedFishBMC(object):
                     count += 1
 
         return count
+
+    def reset_settings_to_default(self):
+        resp = self.redfish.post(self.reset_bios_uri, body=None)
+        if resp.status != 200:
+            log.error(f"An http response of '{resp.status}' was returned attempting to reboot {self.name}.\n")
+            return False
+        else:
+            return True
+        pass
 
     def print_settings(self):
         print(f"{self.name} Current BIOS settings:")
