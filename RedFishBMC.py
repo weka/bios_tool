@@ -48,6 +48,15 @@ class RedFishBMC(object):
         self.reset_bios_uri = self.bios_actions_dict['#Bios.ResetBios']['target']
         self.bios_settings_uri = self.bios_data.dict['@Redfish.Settings']['SettingsObject']['@odata.id']
 
+        #self.settings = self.redfish.get(self.bios_settings_uri)
+        #oem = self.settings.dict['Oem']
+        #vendor_stanza = oem[self.vendor]
+        #jobs = self.redfish.get(vendor_stanza['Jobs']['@odata.id'])
+        #members = jobs.dict['Members']
+        #actions = self.settings.dict['Actions']
+        #log.info("settings received")
+        # Job: Configure: BIOS.Setup.1-1
+
     def get_cdrom_info(self):
         # get the Virtual CDROM
         self.managers_uri = self.redfish.root['Managers']['@odata.id']
@@ -81,6 +90,10 @@ class RedFishBMC(object):
         body = dict()
         body['Attributes'] = settings_dict
 
+        # this is required for Dell to actually apply the settings, not sure if it'll break other brands
+        # but it's not "supposed to"...
+        body["@Redfish.SettingsApplyTime"] = {"ApplyTime":"OnReset"}
+
         resp = self.redfish.patch(self.bios_settings_uri, body=body)
 
         # If iLO responds with something outside of 200 or 201 then lets check the iLO extended info
@@ -90,7 +103,7 @@ class RedFishBMC(object):
                 print(json.dumps(resp.dict['error']['@Message.ExtendedInfo'], indent=4, sort_keys=True))
             except Exception:
                 log.error("A response error occurred, unable to access iLO Extended " "Message Info...")
-        elif resp.status != 200:
+        elif resp.status not in [200,201,202]:
             log.error("An http response of \'%s\' was returned.\n" % resp.status)
         else:
             # print("\nSuccess!\n")
@@ -119,7 +132,7 @@ class RedFishBMC(object):
 
     def reset_settings_to_default(self):
         resp = self.redfish.post(self.reset_bios_uri, body=None)
-        if resp.status != 200:
+        if resp.status not in [200,201,202,203,204]:
             log.error(f"An http response of '{resp.status}' was returned attempting to reboot {self.name}.\n")
             return False
         else:
@@ -137,7 +150,7 @@ class RedFishBMC(object):
         #body['ResetType'] = 'ForceRestart'
         body['ResetType'] = 'GracefulRestart'
         resp = self.redfish.post(action, body=body)
-        if resp.status != 200:
+        if resp.status not in [200,201,202,203,204]:
             log.error(f"An http response of '{resp.status}' was returned attempting to reboot {self.name}.\n")
             return False
         else:
