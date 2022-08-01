@@ -102,7 +102,7 @@ class RedFishBMC(object):
             try:
                 print(json.dumps(resp.dict['error']['@Message.ExtendedInfo'], indent=4, sort_keys=True))
             except Exception:
-                log.error("A response error occurred, unable to access iLO Extended " "Message Info...")
+                log.error("A response exception occurred, unable to access iLO Extended ")
         elif resp.status not in [200,201,202]:
             log.error("An http response of \'%s\' was returned.\n" % resp.status)
         else:
