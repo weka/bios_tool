@@ -165,11 +165,12 @@ def main():
                         body["@Redfish.SettingsApplyTime"] = {"ApplyTime": "OnReset"}
                     if bmc.change_settings(desired_bios_settings[bmc.vendor][bmc.arch]):
                         fixed_hosts += 1
-                        if args.reboot:
-                            if bmc.reboot():
-                                systems_rebooted += 1
             else:
                 log.warning(f"No changes are needed on {bmc.name}")
+            # if they said reboot, reboot
+            if args.reboot:
+                if bmc.reboot():
+                    systems_rebooted += 1
 
         if not args.fix:
             log.info(f"There are {hosts_needing_changes} hosts needing changes")
