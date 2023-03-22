@@ -90,10 +90,6 @@ class RedFishBMC(object):
         body = dict()
         body['Attributes'] = settings_dict
 
-        # this is required for Dell to actually apply the settings, not sure if it'll break other brands
-        # but it's not "supposed to"...
-        body["@Redfish.SettingsApplyTime"] = {"ApplyTime":"OnReset"}
-
         resp = self.redfish.patch(self.bios_settings_uri, body=body)
 
         # If iLO responds with something outside of 200 or 201 then lets check the iLO extended info
