@@ -161,8 +161,8 @@ def main():
                 log.warning(f"{count} changes are needed on {bmc.name}")
                 hosts_needing_changes += 1
                 if args.fix:
-                    if bmc.vendor == "Dell":    # Dell requires this, but it breaks SMC
-                        body["@Redfish.SettingsApplyTime"] = {"ApplyTime": "OnReset"}
+                    #if bmc.vendor == "Dell":    # Dell requires this, but it breaks SMC
+                    #    body["@Redfish.SettingsApplyTime"] = {"ApplyTime": "OnReset"}
                     if bmc.change_settings(desired_bios_settings[bmc.vendor][bmc.arch]):
                         fixed_hosts += 1
                         if args.reboot:
