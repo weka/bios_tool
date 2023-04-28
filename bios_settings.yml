@@ -1,7 +1,7 @@
 Dell:
   AMD:
     LogicalProc: Disabled
-    NumaNodesPerSocket: 4
+    NumaNodesPerSocket: 1
     PcieAspmL1: Disabled
     PcieEnhancedPreferredIo: Enabled
     PciePreferredIoBus: Enabled
