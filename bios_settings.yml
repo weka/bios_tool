@@ -1,7 +1,7 @@
 Dell:
   AMD:
     LogicalProc: Disabled
-    NumaNodesPerSocket: 1
+    NumaNodesPerSocket: "1"
     PcieAspmL1: Disabled
     PcieEnhancedPreferredIo: Enabled
     PciePreferredIoBus: Enabled
@@ -9,9 +9,8 @@ Dell:
     ProcPwrPerf: MaxPerf
     ProcVirtualization: Disabled
     PxeDev1Interface: NIC.Embedded.1-1-1
-    SysProfile: PerfPerWattOptimizedOs  PerfOptimized
+    SysProfile: PerfOptimized
     WorkloadProfile: HpcProfile
-    PciePreferredIoBusVal: 255
   Intel:
     WorkloadProfile: LowLatencyOptimizedProfile
     SysProfile: Custom
