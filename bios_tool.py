@@ -130,7 +130,7 @@ def main():
         try:
             redfish_list.append(RedFishBMC(host['name'], username=host['user'], password=host['password']))
         except Exception as exc:
-            log.error(f"Error opening connections to {host['name']}")
+            log.error(f"Error opening connections to {host['name']}: {exc}")
         # redfish_list.append(RedFishBMC(host['name'], username=host['user'], password=host['password']))
 
     if args.diff:
