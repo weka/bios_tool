@@ -44,6 +44,9 @@ class RedFishBMC(object):
         self.bios_uri = self.systems_members_response.dict['Bios']['@odata.id']
         self.bios_data = self.redfish.get(self.bios_uri)  # ie: /redfish/v1/Systems/1/Bios
 
+        if 'error' in self.bios_data.dict:
+            #log.error(f"Error fetching BIOS settings for {self.name}: {self.bios_data.dict['error']['@Message.ExtendedInfo']}")
+            raise Exception(f"Error fetching BIOS settings for {self.name}: {self.bios_data.dict['error']['@Message.ExtendedInfo']}")
         self.bios_actions_dict = self.bios_data.dict['Actions']
         self.reset_bios_uri = self.bios_actions_dict['#Bios.ResetBios']['target']
         self.bios_settings_uri = self.bios_data.dict['@Redfish.Settings']['SettingsObject']['@odata.id']
