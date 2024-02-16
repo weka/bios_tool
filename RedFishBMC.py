@@ -1,7 +1,10 @@
 import json
+from pprint import pprint
+
 import redfish
 
 from logging import getLogger
+from paramiko.util import log_to_file
 
 log = getLogger(__name__)
 
@@ -14,6 +17,8 @@ class RedFishBMC(object):
 
         # login
         self.name = hostname
+        self.username = username
+        self.password = password
         try:
             self.redfish.login(auth="session")
         except redfish.rest.v1.InvalidCredentialsError:
@@ -25,6 +30,8 @@ class RedFishBMC(object):
 
         # get the Vendor ID
         self.vendor = next(iter(self.redfish.root.get("Oem", {}).keys()), None)
+        if self.vendor is None:
+            self.vendor = self.redfish.root.get("Vendor", None)
 
         # get Systems
         self.systems_uri = self.redfish.root['Systems']['@odata.id']
@@ -43,6 +50,8 @@ class RedFishBMC(object):
         # fetch the BIOS settings
         self.bios_uri = self.systems_members_response.dict['Bios']['@odata.id']
         self.bios_data = self.redfish.get(self.bios_uri)  # ie: /redfish/v1/Systems/1/Bios
+
+        pprint(self.bios_data.dict)
 
         if 'error' in self.bios_data.dict:
             #log.error(f"Error fetching BIOS settings for {self.name}: {self.bios_data.dict['error']['@Message.ExtendedInfo']}")

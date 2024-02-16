@@ -7,6 +7,8 @@ from wekapyutils.wekalogging import configure_logging, register_module
 from RedFishBMC import RedFishBMC
 from tabulate import tabulate
 
+from paramiko.util import log_to_file
+
 # get root logger
 log = logging.getLogger()
 
@@ -99,6 +101,7 @@ def main():
 
     # set up logging in a standard way...
     configure_logging(log, args.verbosity)
+    #log_to_file("paramiko.log", logging.DEBUG)
 
     try:
         conf = _load_config(args.hostconfigfile)
@@ -147,9 +150,9 @@ def main():
                 log.info(f"{bmc.name} has been rebooted")
     else:
         # check BIOS settings
-        hosts_needing_changes = 0
-        fixed_hosts = 0
-        systems_rebooted = 0
+        hosts_needing_changes = list()
+        fixed_hosts = list()
+        systems_rebooted = list()
         for bmc in redfish_list:
             if args.dump:
                 bmc.print_settings()
@@ -159,26 +162,32 @@ def main():
             log.info(f"")
             if count > 0:
                 log.warning(f"{count} changes are needed on {bmc.name}")
-                hosts_needing_changes += 1
+                hosts_needing_changes.append(bmc)
                 if args.fix:
-                    #if bmc.vendor == "Dell":    # Dell requires this, but it breaks SMC
-                    #    body["@Redfish.SettingsApplyTime"] = {"ApplyTime": "OnReset"}
                     if bmc.change_settings(desired_bios_settings[bmc.vendor][bmc.arch]):
-                        fixed_hosts += 1
+                        fixed_hosts.append(bmc)
+                    else:
+                        log.error(f"Unable to fix {bmc.name}")
             else:
                 log.warning(f"No changes are needed on {bmc.name}")
             # if they said reboot, reboot
             if args.reboot:
-                if bmc.reboot():
-                    systems_rebooted += 1
+                if args.fix and bmc in fixed_hosts: # --fix --reboot implies rebooting only the hosts that were fixed
+                    log.info(f"Rebooting {bmc.name}")
+                    bmc.reboot()
+                    systems_rebooted.append(bmc)
+                elif not args.fix:  # they asked to reboot all hosts
+                    log.info(f"Rebooting {bmc.name}")
+                    bmc.reboot()
+                    systems_rebooted.append(bmc)
 
         if not args.fix:
-            log.info(f"There are {hosts_needing_changes} hosts needing changes")
+            log.info(f"There are {len(hosts_needing_changes)} hosts needing changes")
         else:
             if not args.reboot:
-                log.info(f"{fixed_hosts} have been modified.  Please reboot them to activate changes.")
+                log.info(f"{len(fixed_hosts)} have been modified.  Please reboot them to activate changes.")
             else:
-                log.info(f"{systems_rebooted} have been successfully modified and rebooted.")
+                log.info(f"{len(systems_rebooted)} have been successfully modified and rebooted.")
 
     for host in redfish_list:
         host.redfish.logout()
