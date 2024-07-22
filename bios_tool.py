@@ -214,6 +214,7 @@ def main():
                         log.error(f"Unable to fix {bmc.name}")
             else:
                 log.warning(f"No changes are needed on {bmc.name}")
+            log.info("")
             # if they said reboot, reboot
             if args.reboot:
                 if args.fix and bmc in fixed_hosts: # --fix --reboot implies rebooting only the hosts that were fixed
