@@ -1,16 +1,32 @@
 import argparse
 import logging
 import sys
+import traceback
+
+import redfish
 import yaml
 
 from wekapyutils.wekalogging import configure_logging, register_module
 from RedFishBMC import RedFishBMC
 from tabulate import tabulate
 
-from paramiko.util import log_to_file
+# from paramiko.util import log_to_file
 
 # get root logger
 log = logging.getLogger()
+
+def csv_load(f):
+    """
+    Load a CSV file into a list of dictionaries
+    :param f: file object
+    :return: list of dictionaries
+    """
+    import csv
+    reader = csv.DictReader(f)
+    #reader_list = list(reader)
+    #for row in reader:
+    #    print(row)
+    return {"hosts":list(reader)}
 
 
 def _load_config(inputfile):
@@ -20,12 +36,21 @@ def _load_config(inputfile):
         raise
     with f:
         try:
+            if inputfile.endswith(".csv"):
+                return csv_load(f)
             return yaml.load(f, Loader=yaml.FullLoader)
         except AttributeError:
             return yaml.load(f)
         except Exception as exc:
             log.error(f"Error reading config file: {exc}")
             raise
+
+def _generate_config(bmc_ips, bmc_username, bmc_password):
+    conf = dict()
+    conf['hosts'] = list()
+    for ip in bmc_ips:
+        conf['hosts'].append({'name': ip, 'user': bmc_username[0], 'password': bmc_password[0]})
+    return conf
 
 
 def bios_diff(hostlist):
@@ -75,7 +100,7 @@ def main():
 
     # parser.add_argument("host", type=str, nargs="?", help="a host to talk to", default="localhost")
     parser.add_argument("-c", "--hostconfigfile", type=str, nargs="?", help="filename of host config file",
-                        default="host_config.yml")
+                        default="host_config.csv")
     parser.add_argument("-b", "--bios", type=str, nargs="?", help="bios configuration filename",
                         default="bios_settings.yml")
     parser.add_argument("--fix", dest="fix", default=False, action="store_true",
@@ -89,7 +114,12 @@ def main():
     parser.add_argument("--diff", dest="diff", nargs=2, default=False, help="Compare 2 hosts BIOS settings")
     # parser.add_argument("--version", dest="version", default=False, action="store_true",
     #                    help="Display version number")
-
+    parser.add_argument("--bmc_ips", dest="bmc_ips", type=str, nargs="*",
+                        help="a list of hosts to configure, or none to use cluster beacons", default=None)
+    parser.add_argument("--bmc_username", dest="bmc_username", type=str, nargs=1,
+                        help="a username to use on all hosts in --bmc_ips", default=None)
+    parser.add_argument("--bmc_password", dest="bmc_password", type=str, nargs=1,
+                        help="a password to use on all hosts in --bmc_ips", default=None)
     # these next args are passed to the script and parsed in etc/preamble - this is more for syntax checking
     parser.add_argument("-v", "--verbose", dest='verbosity', action='store_true', help="enable verbose mode")
 
@@ -103,11 +133,20 @@ def main():
     configure_logging(log, args.verbosity)
     #log_to_file("paramiko.log", logging.DEBUG)
 
-    try:
-        conf = _load_config(args.hostconfigfile)
-    except Exception as exc:
-        log.error(f"Unable to open host configuration file: {exc}")
-        sys.exit(1)
+
+    # if they provided a list of BMC IPs, they must also provide a username and password
+    if args.bmc_ips is not None:
+        if args.bmc_username is None or args.bmc_password is None:
+            log.error("You must provide a username and password when using --bmc_ips")
+            sys.exit(1)
+        log.info(f"Using BMC IPs - ignoring {args.hostconfigfile}")
+        conf = _generate_config(args.bmc_ips, args.bmc_username, args.bmc_password)
+    else:
+        try:
+            conf = _load_config(args.hostconfigfile)
+        except Exception as exc:
+            log.error(f"Unable to open host configuration file: {exc}")
+            sys.exit(1)
 
     try:
         desired_bios_settings = _load_config(args.bios)
@@ -132,8 +171,13 @@ def main():
         log.info(f"Fetching BIOS settings of host {host['name']}")
         try:
             redfish_list.append(RedFishBMC(host['name'], username=host['user'], password=host['password']))
+        except redfish.rest.v1.InvalidCredentialsError:
+            #log.error(f"Error opening connections to {host['name']} - invalid credentials")
+            # error message is already logged
+            continue
         except Exception as exc:
             log.error(f"Error opening connections to {host['name']}: {exc}")
+            print(traceback.format_exc())
         # redfish_list.append(RedFishBMC(host['name'], username=host['user'], password=host['password']))
 
     if args.diff:

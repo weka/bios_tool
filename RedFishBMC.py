@@ -38,6 +38,8 @@ class RedFishBMC(object):
         self.systems_response = self.redfish.get(self.systems_uri)  # ie: /redfish/v1/Systems
         self.systems_members_uri = next(iter(self.systems_response.dict['Members']))['@odata.id']
         self.systems_members_response = self.redfish.get(self.systems_members_uri)  # ie: /redfish/v1/Systems/1
+        self.systems_members_response_actions = self.systems_members_response.dict['Actions']
+        self.system_reset_types = self.systems_members_response_actions['#ComputerSystem.Reset']['ResetType@Redfish.AllowableValues']
 
         # get Processors
         self.proc_uri = self.systems_members_response.dict['Processors']['@odata.id']
@@ -51,7 +53,7 @@ class RedFishBMC(object):
         self.bios_uri = self.systems_members_response.dict['Bios']['@odata.id']
         self.bios_data = self.redfish.get(self.bios_uri)  # ie: /redfish/v1/Systems/1/Bios
 
-        pprint(self.bios_data.dict)
+        #pprint(self.bios_data.dict)
 
         if 'error' in self.bios_data.dict:
             #log.error(f"Error fetching BIOS settings for {self.name}: {self.bios_data.dict['error']['@Message.ExtendedInfo']}")
@@ -59,22 +61,20 @@ class RedFishBMC(object):
         self.bios_actions_dict = self.bios_data.dict['Actions']
         self.reset_bios_uri = self.bios_actions_dict['#Bios.ResetBios']['target']
         self.bios_settings_uri = self.bios_data.dict['@Redfish.Settings']['SettingsObject']['@odata.id']
-
-        #self.settings = self.redfish.get(self.bios_settings_uri)
-        #oem = self.settings.dict['Oem']
-        #vendor_stanza = oem[self.vendor]
-        #jobs = self.redfish.get(vendor_stanza['Jobs']['@odata.id'])
-        #members = jobs.dict['Members']
-        #actions = self.settings.dict['Actions']
-        #log.info("settings received")
-        # Job: Configure: BIOS.Setup.1-1
-
-    def get_cdrom_info(self):
-        # get the Virtual CDROM
+        if 'SupportedApplyTimes' in self.bios_data.dict['@Redfish.Settings']:
+            self.supported_apply_times = self.bios_data.dict['@Redfish.Settings']['SupportedApplyTimes']
+        else:
+            self.supported_apply_times = None
+        #pprint(self.supported_apply_times)
         self.managers_uri = self.redfish.root['Managers']['@odata.id']
         self.managers_data = self.redfish.get(self.managers_uri)
         self.managers_members_uri = next(iter(self.managers_data.dict['Members']))['@odata.id']
         self.managers_members_response = self.redfish.get(self.managers_members_uri)  # ie: /redfish/v1/Managers/1
+        self.managers_members_actions = self.managers_members_response.dict['Actions']
+        print()
+
+    def get_cdrom_info(self):
+        # get the Virtual CDROM
         self.virtual_media_uri = self.managers_members_response.dict['VirtualMedia']['@odata.id']
         self.virtual_media_data = self.redfish.get(self.virtual_media_uri)  # ie: /redfish/v1/Managers/1/VirtualMedia
         self.virtual_media_list = list()
@@ -102,8 +102,11 @@ class RedFishBMC(object):
         body = dict()
         body['Attributes'] = settings_dict
 
-        if self.vendor == "Dell":  # Dell requires this, but it breaks SMC
+        # We should fetch the SupportedApplyTimes attribute from the settings object to see if we need to set it...
+        if self.supported_apply_times is not None and "OnReset" in self.supported_apply_times:
             body["@Redfish.SettingsApplyTime"] = {"ApplyTime": "OnReset"}
+        #if self.vendor == "Dell":  # Dell requires this, but it breaks SMC
+        #    body["@Redfish.SettingsApplyTime"] = {"ApplyTime": "OnReset"}
 
         resp = self.redfish.patch(self.bios_settings_uri, body=body)
 
@@ -144,7 +147,7 @@ class RedFishBMC(object):
     def reset_settings_to_default(self):
         resp = self.redfish.post(self.reset_bios_uri, body=None)
         if resp.status not in [200,201,202,203,204]:
-            log.error(f"An http response of '{resp.status}' was returned attempting to reboot {self.name}.\n")
+            log.error(f"An http response of '{resp.status}' was returned attempting to reset bios to defauly on {self.name}.\n")
             return False
         else:
             return True
@@ -158,9 +161,18 @@ class RedFishBMC(object):
         action = self.systems_members_response.obj.Actions['#ComputerSystem.Reset']['target']
         # print(json.dumps(self.systems_members_response.obj.Actions['#ComputerSystem.Reset']))
         body = dict()
-        #body['ResetType'] = 'ForceRestart'
-        body['ResetType'] = 'GracefulRestart'
+        if self.systems_members_response.obj.PowerState != "On":
+            body['ResetType'] = 'On'
+        else:
+            if 'GracefulRestart' in self.system_reset_types:
+                body['ResetType'] = 'GracefulRestart'
+            elif 'ForceRestart' in self.system_reset_types:
+                body['ResetType'] = 'ForceRestart'
+            else:
+                body['ResetType'] = 'On'
+
         resp = self.redfish.post(action, body=body)
+        print(f'reset status: {resp.status}')
         if resp.status not in [200,201,202,203,204]:
             log.error(f"An http response of '{resp.status}' was returned attempting to reboot {self.name}.\n")
             return False
