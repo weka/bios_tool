@@ -8,6 +8,7 @@ import yaml
 
 from wekapyutils.wekalogging import configure_logging, register_module
 from RedFishBMC import RedFishBMC
+from BMCsetup import bmc_setup
 from tabulate import tabulate
 
 # from paramiko.util import log_to_file
@@ -103,6 +104,8 @@ def main():
                         default="host_config.csv")
     parser.add_argument("-b", "--bios", type=str, nargs="?", help="bios configuration filename",
                         default="bios_settings.yml")
+    parser.add_argument("--bmc_config", dest="bmc_config", default=False, action="store_true",
+                        help="Configure the BMCs to allow RedFish access")
     parser.add_argument("--fix", dest="fix", default=False, action="store_true",
                         help="Correct any bios settings that do not match the definition")
     parser.add_argument("--reboot", dest="reboot", default=False, action="store_true",
@@ -127,7 +130,9 @@ def main():
 
     # local modules - override a module's logging level
     register_module("RedFishBMC", logging.INFO)
+    register_module("BMCsetup", logging.INFO)
     register_module("redfish.rest.v1", logging.ERROR)
+    register_module("paramiko", logging.ERROR)
 
     # set up logging in a standard way...
     configure_logging(log, args.verbosity)
@@ -147,6 +152,14 @@ def main():
         except Exception as exc:
             log.error(f"Unable to open host configuration file: {exc}")
             sys.exit(1)
+
+    if args.bmc_config:
+        log.info("Configuring BMCs")
+        for host in conf['hosts']:
+            log.info(f"Configuring {host['name']}")
+            bmc_setup(host['name'], host['user'], host['password'])
+        log.info("BMCs have been configured")
+        sys.exit(0)
 
     try:
         desired_bios_settings = _load_config(args.bios)
