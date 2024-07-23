@@ -1,5 +1,5 @@
 # bios_tool
-A tool for viewing/setting bios_settings for Weka servers
+A tool for viewing/setting bios settings for Weka servers
 
 ```angular2html
 
