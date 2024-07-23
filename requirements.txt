@@ -1,4 +1,4 @@
-PyYAML~=6.0
-wekapyutils~=0.9.9
-tabulate~=0.8.10
-redfish~=3.1.6
+PyYAML>=6.0
+wekapyutils>=0.9.9
+tabulate>=0.8.10
+redfish>=3.1.6
