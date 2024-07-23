@@ -123,10 +123,14 @@ def main():
                         help="a username to use on all hosts in --bmc_ips", default=None)
     parser.add_argument("--bmc_password", dest="bmc_password", type=str, nargs=1,
                         help="a password to use on all hosts in --bmc_ips", default=None)
-    # these next args are passed to the script and parsed in etc/preamble - this is more for syntax checking
     parser.add_argument("-v", "--verbose", dest='verbosity', action='store_true', help="enable verbose mode")
+    parser.add_argument("--version", dest='version', action='store_true', help="report program version and exit")
 
     args = parser.parse_args()
+
+    if args.version:
+        print(f"{progname} version 2024.07.23")
+        sys.exit(0)
 
     # local modules - override a module's logging level
     register_module("RedFishBMC", logging.INFO)
