@@ -1,17 +1,40 @@
 import json
-from pprint import pprint
+#from pprint import pprint
 
 import redfish
 
 from logging import getLogger
-from paramiko.util import log_to_file
+#from paramiko.util import log_to_file
 
 log = getLogger(__name__)
+
+
+def is_hex(param):
+    import string
+    return all(c in string.hexdigits for c in param)
+
+def trim_supermicro_key(key):
+    # Supermicro uses a _XXXX (hex) suffix for the key - trim it off
+    return key[:-5] if (key[-5] == "_" and is_hex(key[-4])) else key
+
+
+def trim_supermicro_dict(settings_dict):
+    new_settings_dict = dict()
+    for key, value in settings_dict.items():
+        new_settings_dict[trim_supermicro_key(key)] = value
+    return new_settings_dict
 
 
 class RedFishBMC(object):
     def __init__(self, hostname, username=None, password=None):
         # create the redfish object
+        self.cdrom_eject_uri = None
+        self.cdrom_mount_uri = None
+        self.cdrom_dev = None
+        self.cdrom_uri = None
+        self.virtual_media_list = None
+        self.virtual_media_data = None
+        self.virtual_media_uri = None
         self.redfish = redfish.redfish_client(base_url="https://" + hostname, username=username, password=password,
                                               default_prefix='/redfish/v1')
 
@@ -38,8 +61,15 @@ class RedFishBMC(object):
         self.systems_response = self.redfish.get(self.systems_uri)  # ie: /redfish/v1/Systems
         self.systems_members_uri = next(iter(self.systems_response.dict['Members']))['@odata.id']
         self.systems_members_response = self.redfish.get(self.systems_members_uri)  # ie: /redfish/v1/Systems/1
+        self.bios_version = self.systems_members_response.dict.get('BiosVersion', None)
         self.systems_members_response_actions = self.systems_members_response.dict['Actions']
-        self.system_reset_types = self.systems_members_response_actions['#ComputerSystem.Reset']['ResetType@Redfish.AllowableValues']
+        try:
+            self.system_reset_types = self.systems_members_response_actions['#ComputerSystem.Reset']['ResetType@Redfish.AllowableValues']
+        except KeyError:
+            #self.system_reset_types = None   # SMC doesn't have this key...
+            self.system_reset_action_info = self.redfish.get(
+                        self.systems_members_response_actions['#ComputerSystem.Reset']['@Redfish.ActionInfo'])
+            self.system_reset_types = self.system_reset_action_info.dict['Parameters'][0]['AllowableValues']
 
         # get Processors
         self.proc_uri = self.systems_members_response.dict['Processors']['@odata.id']
@@ -53,19 +83,17 @@ class RedFishBMC(object):
         self.bios_uri = self.systems_members_response.dict['Bios']['@odata.id']
         self.bios_data = self.redfish.get(self.bios_uri)  # ie: /redfish/v1/Systems/1/Bios
 
-        #pprint(self.bios_data.dict)
-
         if 'error' in self.bios_data.dict:
             #log.error(f"Error fetching BIOS settings for {self.name}: {self.bios_data.dict['error']['@Message.ExtendedInfo']}")
             raise Exception(f"Error fetching BIOS settings for {self.name}: {self.bios_data.dict['error']['@Message.ExtendedInfo']}")
         self.bios_actions_dict = self.bios_data.dict['Actions']
         self.reset_bios_uri = self.bios_actions_dict['#Bios.ResetBios']['target']
         self.bios_settings_uri = self.bios_data.dict['@Redfish.Settings']['SettingsObject']['@odata.id']
+        #self.redfish_settings = self.bios_data.dict['@Redfish.Settings']
         if 'SupportedApplyTimes' in self.bios_data.dict['@Redfish.Settings']:
             self.supported_apply_times = self.bios_data.dict['@Redfish.Settings']['SupportedApplyTimes']
         else:
             self.supported_apply_times = None
-        #pprint(self.supported_apply_times)
         self.managers_uri = self.redfish.root['Managers']['@odata.id']
         self.managers_data = self.redfish.get(self.managers_uri)
         self.managers_members_uri = next(iter(self.managers_data.dict['Members']))['@odata.id']
@@ -74,7 +102,7 @@ class RedFishBMC(object):
         print()
 
     def get_cdrom_info(self):
-        # get the Virtual CDROM
+        # get the Virtual CD-ROM
         self.virtual_media_uri = self.managers_members_response.dict['VirtualMedia']['@odata.id']
         self.virtual_media_data = self.redfish.get(self.virtual_media_uri)  # ie: /redfish/v1/Managers/1/VirtualMedia
         self.virtual_media_list = list()
@@ -97,6 +125,10 @@ class RedFishBMC(object):
         pass
 
     def change_settings(self, settings_dict):
+        if self.vendor == "Supermicro":
+            settings_dict = self.adjust_supermicro_settings(settings_dict)
+            if settings_dict is None:
+                return False
 
         # body = {'Attributes': {bios_property: property_value}}
         body = dict()
@@ -105,8 +137,6 @@ class RedFishBMC(object):
         # We should fetch the SupportedApplyTimes attribute from the settings object to see if we need to set it...
         if self.supported_apply_times is not None and "OnReset" in self.supported_apply_times:
             body["@Redfish.SettingsApplyTime"] = {"ApplyTime": "OnReset"}
-        #if self.vendor == "Dell":  # Dell requires this, but it breaks SMC
-        #    body["@Redfish.SettingsApplyTime"] = {"ApplyTime": "OnReset"}
 
         resp = self.redfish.patch(self.bios_settings_uri, body=body)
 
@@ -131,8 +161,12 @@ class RedFishBMC(object):
         if settings is None:
             log.info(f"{self.name} There are no settings for this platform in the bios settings configuration file")
             return 0
-        vendor = self.vendor
-        arch = self.arch
+
+        if self.vendor == "Supermicro":
+            settings = self.adjust_supermicro_settings(settings)
+            if settings is None:
+                return 0
+
         count = 0
         for key, value in settings.items():
             if key not in self.bios_data.obj.Attributes:
@@ -148,7 +182,7 @@ class RedFishBMC(object):
     def reset_settings_to_default(self):
         resp = self.redfish.post(self.reset_bios_uri, body=None)
         if resp.status not in [200,201,202,203,204]:
-            log.error(f"An http response of '{resp.status}' was returned attempting to reset bios to defauly on {self.name}.\n")
+            log.error(f"An http response of '{resp.status}' was returned attempting to reset bios to default on {self.name}.\n")
             return False
         else:
             return True
@@ -179,3 +213,31 @@ class RedFishBMC(object):
             return False
         else:
             return True
+
+    def adjust_supermicro_settings(self, settings_dict):
+        new_settings_dict = dict()
+
+        for key, value in settings_dict.items():
+            new_key = self.supermicro_find_key(trim_supermicro_key(key))
+            if new_key is None:
+                log.error(f"Unable to find key {key} in the Supermicro BIOS settings")
+                continue
+            new_settings_dict[new_key] = value
+
+        if len(new_settings_dict) == 0:
+            log.error(f"Unable to find any keys in the Supermicro BIOS settings")
+            return None
+        return new_settings_dict
+
+    def supermicro_find_key(self, key):
+        # Supermicro uses a different key for the same setting
+        # This function will convert the key to the correct one
+        # for Supermicro
+        #keys = list(self.bios_data.obj.Attributes.keys())
+        for server_key in self.bios_data.obj.Attributes.keys():
+            if server_key[-5] == "_" and is_hex(server_key[-4]) and server_key[:-5] == key:
+                return server_key
+            else:
+                if server_key == key:
+                    return server_key
+        return None

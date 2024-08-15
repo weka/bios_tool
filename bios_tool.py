@@ -7,7 +7,7 @@ import redfish
 import yaml
 
 from wekapyutils.wekalogging import configure_logging, register_module
-from RedFishBMC import RedFishBMC
+from RedFishBMC import RedFishBMC, trim_supermicro_dict
 from BMCsetup import bmc_setup
 from tabulate import tabulate
 
@@ -58,12 +58,30 @@ def bios_diff(hostlist):
     hosta = hostlist[0]
     hostb = hostlist[1]
 
-    hosta_bios = hosta.bios_data.dict['Attributes']
-    hostb_bios = hostb.bios_data.dict['Attributes']
-
     if hosta.arch != hostb.arch:
         print()
-        print("WARNING: Hosts are of different architectures!")
+        print(f"ERROR: Hosts are of different architectures! {hosta.arch} vs {hostb.arch}")
+        sys.exit(1)
+    if hosta.vendor != hostb.vendor:
+        print()
+        print(f"ERROR: Hosts are of different vendors! {hosta.vendor} vs {hostb.vendor}")
+        sys.exit(1)
+    if hosta.bios_version != hostb.bios_version:
+        print()
+        print(f"WARNING: Hosts have different BIOS versions! {hosta.bios_version} vs {hostb.bios_version}")
+        # note:  Supermicro has a different BIOS keys in every bios version (all end in _XXXX, where XXXX is hex)
+        # the XXXX is different in different versions.  This means that the BIOS settings are not comparable
+        # between different versions of the BIOS.
+        # Perhaps we should trim the keys to remove the _XXXX part so we can compare different BIOS versions?
+        # This could be implemented by copying the hosta_bios and hostb_bios dictionaries and removing the _XXXX
+        # from the keys.  Then we could compare the two dictionaries.
+
+    if hosta.vendor == "Supermicro":
+        hosta_bios = trim_supermicro_dict(hostlist[0].bios_data.dict['Attributes'])
+        hostb_bios = trim_supermicro_dict(hostlist[1].bios_data.dict['Attributes'])
+    else:
+        hosta_bios = hostlist[0].bios_data.dict['Attributes']
+        hostb_bios = hostlist[1].bios_data.dict['Attributes']
 
     diff = list()
     settings_not_present = list()
@@ -129,7 +147,7 @@ def main():
     args = parser.parse_args()
 
     if args.version:
-        print(f"{progname} version 2024.07.23")
+        print(f"{progname} version 2024.08.15")
         sys.exit(0)
 
     # local modules - override a module's logging level
