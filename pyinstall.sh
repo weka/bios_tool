@@ -9,6 +9,7 @@ pyinstaller --onefile $MAIN
 
 mkdir -p $TARGET
 cp dist/$TOOL $TARGET
+cp *.yml *.csv $TARGET
 
 cd tarball
 tar cvzf ../${TOOL}.tar $TOOL
