@@ -6,7 +6,6 @@ Dell:
     ProcCStates: Disabled
     ProcPwrPerf: MaxPerf
     ProcVirtualization: Disabled
-    PxeDev1Interface: NIC.Embedded.1-1-1
     SysProfile: Custom
     WorkloadProfile: NotConfigured
     DeterminismSlider: PerfDeterminism
@@ -17,3 +16,4 @@ Dell:
     BootMode: Uefi
     SecureBoot: Disabled
     SerialComm: OnConRedir
+
