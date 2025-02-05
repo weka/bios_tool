@@ -90,7 +90,7 @@ class RedFishBMC(object):
         self.reset_bios_uri = self.bios_actions_dict['#Bios.ResetBios']['target']
         
         if '@Redfish.Settings' not in self.bios_data.dict:
-            log.error(f"Error retrieving settings from remote console. Pending changes in target bios should be applied by a reboot before bios_tool can continue" )
+            log.error(f"Error retrieving settings from {hostname} even though credentials are fine - check any pending/scheduled changes to the BMC and reboot" )
 
         self.bios_settings_uri = self.bios_data.dict['@Redfish.Settings']['SettingsObject']['@odata.id']
         #self.redfish_settings = self.bios_data.dict['@Redfish.Settings']
