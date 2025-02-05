@@ -88,12 +88,21 @@ class RedFishBMC(object):
             raise Exception(f"Error fetching BIOS settings for {self.name}: {self.bios_data.dict['error']['@Message.ExtendedInfo']}")
         self.bios_actions_dict = self.bios_data.dict['Actions']
         self.reset_bios_uri = self.bios_actions_dict['#Bios.ResetBios']['target']
+        
+        try:
+            self.bios_data.dict['@Redfish.Settings']
+        except KeyError as ke: 
+            log.error(f"Error retrieving settings from remote console. Pending changes in target bios should be applied by a reboot before bios_tool can continue" )
+            raise                                                                                                   
+
         self.bios_settings_uri = self.bios_data.dict['@Redfish.Settings']['SettingsObject']['@odata.id']
         #self.redfish_settings = self.bios_data.dict['@Redfish.Settings']
         if 'SupportedApplyTimes' in self.bios_data.dict['@Redfish.Settings']:
             self.supported_apply_times = self.bios_data.dict['@Redfish.Settings']['SupportedApplyTimes']
         else:
             self.supported_apply_times = None
+        
+
         self.managers_uri = self.redfish.root['Managers']['@odata.id']
         self.managers_data = self.redfish.get(self.managers_uri)
         self.managers_members_uri = next(iter(self.managers_data.dict['Members']))['@odata.id']
@@ -235,8 +244,9 @@ class RedFishBMC(object):
         # for Supermicro
         #keys = list(self.bios_data.obj.Attributes.keys())
         for server_key in self.bios_data.obj.Attributes.keys():
-            if server_key[-5] == "_" and is_hex(server_key[-4]) and server_key[:-5] == key:
-                return server_key
+            if "_" in server_key:
+                if server_key[-5] == "_" and is_hex(server_key[-4]) and server_key[:-5] == key:
+                    return server_key
             else:
                 if server_key == key:
                     return server_key

@@ -69,7 +69,7 @@ Supermicro:
     DFCstates: Disabled
     GlobalC_stateControl: Disabled
     DeterminismControl: Manual
-    DeterminismEnable: "Enable Performance Determinism"
+    DeterminismEnable: Performance
   Intel:
     EnhancedHaltState(C1E): Disabled
     HardwareP-States: Disabled
