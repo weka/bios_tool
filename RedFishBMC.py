@@ -89,11 +89,8 @@ class RedFishBMC(object):
         self.bios_actions_dict = self.bios_data.dict['Actions']
         self.reset_bios_uri = self.bios_actions_dict['#Bios.ResetBios']['target']
         
-        try:
-            self.bios_data.dict['@Redfish.Settings']
-        except KeyError as ke: 
+        if '@Redfish.Settings' not in self.bios_data.dict:
             log.error(f"Error retrieving settings from remote console. Pending changes in target bios should be applied by a reboot before bios_tool can continue" )
-            raise                                                                                                   
 
         self.bios_settings_uri = self.bios_data.dict['@Redfish.Settings']['SettingsObject']['@odata.id']
         #self.redfish_settings = self.bios_data.dict['@Redfish.Settings']
