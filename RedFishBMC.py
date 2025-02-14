@@ -244,6 +244,9 @@ class RedFishBMC(object):
             if "_" in server_key:
                 if server_key[-5] == "_" and is_hex(server_key[-4]) and server_key[:-5] == key:
                     return server_key
+                else:
+                    if server_key == key:
+                        return server_key
             else:
                 if server_key == key:
                     return server_key
