@@ -230,12 +230,11 @@ class RedFishBMC(object):
         return new_settings_dict
 
     def supermicro_find_key(self, key):
-        # Supermicro uses a different key for the same setting
-        # This function will convert the key to the correct one
-        # for Supermicro
+        # Supermicro (sometimes) uses a different key for the same setting (they add a _ and 4-digit hex number: xxx_010F
+        # This function will convert the key to the correct one for Supermicro
         #keys = list(self.bios_data.obj.Attributes.keys())
         for server_key in self.bios_data.obj.Attributes.keys():
-            if server_key[-5] == "_" and is_hex(server_key[-4]) and server_key[:-5] == key:
+            if len(server_key) > 5 and server_key[-5] == "_" and is_hex(server_key[-4]) and server_key[:-5] == key:
                 return server_key
             else:
                 if server_key == key:
