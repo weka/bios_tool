@@ -30,7 +30,8 @@ def csv_load(f):
     return {"hosts":list(reader)}
 
 
-def _load_config(inputfile):
+# load a config file - either CSV or YAML
+def load_config(inputfile):
     try:
         f = open(inputfile)
     except Exception as exc:
@@ -46,7 +47,7 @@ def _load_config(inputfile):
             log.error(f"Error reading config file: {exc}")
             raise
 
-def _generate_config(bmc_ips, bmc_username, bmc_password):
+def generate_config(bmc_ips, bmc_username, bmc_password):
     conf = dict()
     conf['hosts'] = list()
     for ip in bmc_ips:
@@ -111,6 +112,23 @@ def bios_diff(hostlist):
 
     return are_different
 
+def open_sessions(hostlist):
+    # open connections to all the hosts
+    redfish_list = list()
+    for host in hostlist:
+        log.info(f"Fetching BIOS settings of host {host['name']}")
+        try:
+            redfish_list.append(RedFishBMC(host['name'], username=host['user'], password=host['password']))
+        except redfish.rest.v1.InvalidCredentialsError:
+            continue
+        except Exception as exc:
+            log.error(f"Error opening connections to {host['name']}: {exc}")
+            print(traceback.format_exc())
+    return(redfish_list)
+
+def close_sessions(hostlist):
+    for host in hostlist:
+        host.redfish.logout()
 
 def main():
     # parse arguments
@@ -147,7 +165,7 @@ def main():
     args = parser.parse_args()
 
     if args.version:
-        print(f"{progname} version 2024.08.15")
+        print(f"{progname} version 2025.03.14")
         sys.exit(0)
 
     # local modules - override a module's logging level
@@ -167,14 +185,16 @@ def main():
             log.error("You must provide a username and password when using --bmc_ips")
             sys.exit(1)
         log.info(f"Using BMC IPs - ignoring {args.hostconfigfile}")
-        conf = _generate_config(args.bmc_ips, args.bmc_username, args.bmc_password)
+        conf = generate_config(args.bmc_ips, args.bmc_username, args.bmc_password)
     else:
+        # else try to load the configfile
         try:
-            conf = _load_config(args.hostconfigfile)
+            conf = load_config(args.hostconfigfile)
         except Exception as exc:
             log.error(f"Unable to open host configuration file: {exc}")
             sys.exit(1)
 
+    # did the user ask us to make sure the BMC is set with ipmi over lan and redfish, etc?
     if args.bmc_config:
         log.info("Configuring BMCs")
         for host in conf['hosts']:
@@ -183,12 +203,14 @@ def main():
         log.info("BMCs have been configured")
         sys.exit(0)
 
+    # try to load the BIOS settings
     try:
-        desired_bios_settings = _load_config(args.bios)
+        desired_bios_settings = load_config(args.bios)
     except Exception as exc:
         log.error(f"Unable to parse bios settings configuration file: {exc}")
         sys.exit(1)
 
+    # if they asked for a diff of two servers, make sure they're in the config file...
     if args.diff:
         hostlist = list()
         for c_host in args.diff:
@@ -198,22 +220,11 @@ def main():
                 log.error(f"host {c_host} not in {args.hostconfigfile}")
                 sys.exit(1)
     else:
+        # all hosts
         hostlist = conf['hosts']
 
-    # connect to all the hosts
-    redfish_list = list()
-    for host in hostlist:
-        log.info(f"Fetching BIOS settings of host {host['name']}")
-        try:
-            redfish_list.append(RedFishBMC(host['name'], username=host['user'], password=host['password']))
-        except redfish.rest.v1.InvalidCredentialsError:
-            #log.error(f"Error opening connections to {host['name']} - invalid credentials")
-            # error message is already logged
-            continue
-        except Exception as exc:
-            log.error(f"Error opening connections to {host['name']}: {exc}")
-            print(traceback.format_exc())
-        # redfish_list.append(RedFishBMC(host['name'], username=host['user'], password=host['password']))
+    # open connections to all the hosts - redfish_list is a list of RedFishBMC objects
+    redfish_list = open_sessions(hostlist)
 
     if args.diff:
         if len(redfish_list) != 2:
@@ -222,6 +233,7 @@ def main():
             log.info("The servers have identical BIOS settings")
     elif args.reset_bios:
         for bmc in redfish_list:
+            # rest the bios...
             bmc.reset_settings_to_default()
             log.info(f"{bmc.name} has been reset to factory defaults")
             if args.reboot:
@@ -269,8 +281,7 @@ def main():
             else:
                 log.info(f"{len(systems_rebooted)} have been successfully modified and rebooted.")
 
-    for host in redfish_list:
-        host.redfish.logout()
+    close_sessions(redfish_list)
 
 
 if __name__ == '__main__':

@@ -192,7 +192,6 @@ class RedFishBMC(object):
             return False
         else:
             return True
-        pass
 
     def print_settings(self):
         print(f"{self.name} Current BIOS settings:")
