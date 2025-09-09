@@ -2,12 +2,19 @@ import argparse
 import logging
 import sys
 import traceback
+from asyncore import dispatcher_with_send
+from itertools import count
+from logging import exception, setLogRecordFactory
+from platform import architecture
+from wsgiref.simple_server import server_version
 
 import redfish
 import yaml
+from ply.yacc import resultlimit
+from redfish.rest.v1 import RetriesExhaustedError
 
 from wekapyutils.wekalogging import configure_logging, register_module
-from RedFishBMC import RedFishBMC, trim_supermicro_dict
+from RedFishBMC import RedFishBMC
 from BMCsetup import bmc_setup
 from tabulate import tabulate
 
@@ -15,6 +22,44 @@ from tabulate import tabulate
 
 # get root logger
 log = logging.getLogger()
+
+class Server(object):
+    def __init__(self, hostname, username, password):
+        self.hostname = hostname
+        self.username = username
+        self.password = password
+        self.bmc = None
+        self.bios_settings = None
+        self.manufacturer = None
+        self.arch = None
+        self.model = None
+
+
+    def connect(self):
+        try:
+            # need to add a timeout here...
+            self.bmc = RedFishBMC(self.hostname, username=self.username, password=self.password)
+            self.bios_settings = self.bmc.get_bios_settings()
+            self.manufacturer = self.bmc.manufacturer
+            self.arch = self.bmc.arch
+            self.model = self.bmc.model
+            log.info(f"Connected to {self.hostname}")
+            return self
+        except redfish.rest.v1.InvalidCredentialsError:
+            log.error(f"Invalid credentials for {self.hostname}")
+        except RetriesExhaustedError:
+            log.error(f"Error connecting to {self.hostname}: Retries exhausted.  Is the server running?")
+        except Exception as exc:
+            log.error(f"Error opening connections to {self.hostname}: {exc}")
+
+        # print(traceback.format_exc())
+        return None
+
+
+    def close(self):
+        if self.bmc:
+            self.bmc.redfish.logout()
+
 
 def csv_load(f):
     """
@@ -54,6 +99,111 @@ def generate_config(bmc_ips, bmc_username, bmc_password):
         conf['hosts'].append({'name': ip, 'user': bmc_username[0], 'password': bmc_password[0]})
     return conf
 
+def save_bmc_db(redfish_list, defaults_database):
+    bmc_db = None
+    try:
+        bmc_db = load_config(defaults_database)
+    except FileNotFoundError: # it's ok if it doesn't exist - we'll create it
+        log.info(f"Bios database {defaults_database} does not exist, creating")
+        pass
+    except Exception as exc:
+        log.error(f"Database file {defaults_database} file: {exc}")
+        return False
+
+    if bmc_db is None:
+        bmc_db = dict()
+
+    # build the in-memory db
+    for server in redfish_list:
+        manufacturer = server.manufacturer
+        model = server.model
+        architecture = server.arch
+        #bios_version = bmc.bios_version
+        the_dict = server.bmc.bios_data.dict
+        the_obj = server.bmc.bios_data.obj
+        bios_settings = server.bmc.bios_data.dict['Attributes']
+        if manufacturer not in bmc_db:
+            bmc_db[manufacturer] = dict()
+        if architecture not in bmc_db[manufacturer]:
+            bmc_db[manufacturer][architecture] = dict()
+
+        # always overwrite any old settings
+        if model in bmc_db[manufacturer][architecture]:
+            log.warning(f"{manufacturer}/{architecture}/{model} found in database, overwriting")
+        bmc_db[manufacturer][architecture][model] = bios_settings
+
+    with open(defaults_database, 'w') as f:
+        f.write('# Bios Defaults Database\n')
+        f.write('# This should contain the default/factory reset values\n')
+        yaml.dump(bmc_db, f, default_flow_style=False)
+
+# Generate the bios defs for a server model so we can later set the values on new servers
+def diff_defaults(defaults_database, redfish_list):
+    bmc_db = None
+    custom_settings = dict()
+    try:
+        bmc_db = load_config(defaults_database)
+    except FileNotFoundError: # it's ok if it doesn't exist - we'll create it
+        log.info(f"Bios database {defaults_database} does not exist, creating")
+    except Exception as exc:
+        log.error(f"Database file {defaults_database} file: {exc}")
+        return False
+
+    if bmc_db is None:
+        bmc_db = dict()
+
+    for server in redfish_list:
+        manufacturer = server.bmc.manufacturer
+        model = server.bmc.model
+        arch = server.bmc.arch
+        bios_settings = server.bmc.bios_data.dict['Attributes']  # bios settings on the target server
+
+        if manufacturer not in bmc_db:
+            log.error(f"There are no default settings for {manufacturer}")
+            return False
+        if arch not in bmc_db[manufacturer]:
+            log.error(f"There are no default settings for {manufacturer}/{arch}")
+            return False
+        if model not in bmc_db[manufacturer][arch]:
+            log.error(f"There are no default settings for {manufacturer}/{arch}/{model}")
+            return False
+
+        defaults = bmc_db[manufacturer][arch][model]
+
+        # make a list of setting that differ on this server compared to factory defaults
+        log.info(f"Looking at defaults for {server.hostname}: {manufacturer}/{arch}/{model}:")
+        bios_differences = dict()
+        missing_settings = 0
+        for setting in defaults:
+            if setting not in bios_settings:   # does this default setting exist in the server?
+                log.warning(f"{server.hostname} is missing setting for {manufacturer}/{arch}/{model}/{setting} - ???")
+                missing_settings += 1
+            else:
+                if bios_settings[setting] != defaults[setting]:
+                    log.info(f'Setting: {setting} differs from default: {bios_settings[setting]}')
+                    bios_differences[setting] = bios_settings[setting]
+
+        if len(bios_differences) == 0 and missing_settings == 0:
+            log.info(f"Server {server.bmc.name} has all default settings")
+            continue
+        elif len(bios_differences) == 0:
+            log.error(f"Server {server.bmc.name}'s default definition is incorrect or incomplete, and shows no bios_differences")
+            continue
+
+        if manufacturer not in custom_settings:
+            custom_settings[manufacturer] = dict()
+        if arch not in custom_settings[manufacturer]:
+            custom_settings[manufacturer][arch] = dict()
+        custom_settings[manufacturer][arch][model] = bios_differences
+
+    if len(custom_settings) == 0:
+        log.info("None of the servers have non-default settings")
+    else:
+        print()
+        print(f"Bios Differences (Edit these before adding to the bios_settings file):")
+        print(yaml.dump(custom_settings))
+    return True
+
 
 def bios_diff(hostlist):
     hosta = hostlist[0]
@@ -63,9 +213,9 @@ def bios_diff(hostlist):
         print()
         print(f"ERROR: Hosts are of different architectures! {hosta.arch} vs {hostb.arch}")
         sys.exit(1)
-    if hosta.vendor != hostb.vendor:
+    if hosta.manufacturer != hostb.manufacturer:
         print()
-        print(f"ERROR: Hosts are of different vendors! {hosta.vendor} vs {hostb.vendor}")
+        print(f"ERROR: Hosts are of different manufacturer! {hosta.manufacturer} vs {hostb.manufacturer}")
         sys.exit(1)
     if hosta.bios_version != hostb.bios_version:
         print()
@@ -77,15 +227,18 @@ def bios_diff(hostlist):
         # This could be implemented by copying the hosta_bios and hostb_bios dictionaries and removing the _XXXX
         # from the keys.  Then we could compare the two dictionaries.
 
-    if hosta.vendor == "Supermicro":
-        hosta_bios = trim_supermicro_dict(hostlist[0].bios_data.dict['Attributes'])
-        hostb_bios = trim_supermicro_dict(hostlist[1].bios_data.dict['Attributes'])
-    else:
-        hosta_bios = hostlist[0].bios_data.dict['Attributes']
-        hostb_bios = hostlist[1].bios_data.dict['Attributes']
+    #if hosta.manufacturer == "Supermicro":
+    #    hosta_bios = trim_supermicro_dict(hostlist[0].bios_data.dict['Attributes'])
+    #    hostb_bios = trim_supermicro_dict(hostlist[1].bios_data.dict['Attributes'])
+    #else:
+    #    hosta_bios = hostlist[0].bios_data.dict['Attributes']
+    #    hostb_bios = hostlist[1].bios_data.dict['Attributes']
 
-    diff = list()
-    settings_not_present = list()
+    hosta_bios = hostlist[0].bios_data.dict['Attributes']
+    hostb_bios = hostlist[1].bios_data.dict['Attributes']
+
+    diff = list()                  #  Entries are [setting, value_a, value_b]
+    settings_not_present = list()  #  Entries are [setting, value_a, value_b]
     for setting, value in hosta_bios.items():
         if setting not in hostb_bios:
             settings_not_present.append([setting, value, "setting not present"])
@@ -112,23 +265,161 @@ def bios_diff(hostlist):
 
     return are_different
 
+# detail the differences between 2 dicts (keys in one and not in the other, and different values for the same key
+def diff_dicts(dict1, dict2):
+    diff = list()
+    keys_not_present_in1 = list()
+    keys_not_present_in2 = list()
+    for key, value in dict1.items():
+        if key not in dict2:
+            keys_not_present_in2.append([key, value, "key not present"])
+        elif dict2[key] != value:
+            diff.append([key, value, dict2[key]])
+
+    # check for key in b that are not in a
+    for key, value in dict2.items():
+        if key not in dict1:
+            keys_not_present_in1.append([key, "key not present", value])
+
+    return (diff, keys_not_present_in1, keys_not_present_in2)
+
+
 def open_sessions(hostlist):
     # open connections to all the hosts
     redfish_list = list()
-    for host in hostlist:
+    for server in hostlist:
         log.info(f"Fetching BIOS settings of host {host['name']}")
-        try:
-            redfish_list.append(RedFishBMC(host['name'], username=host['user'], password=host['password']))
-        except redfish.rest.v1.InvalidCredentialsError:
-            continue
-        except Exception as exc:
-            log.error(f"Error opening connections to {host['name']}: {exc}")
-            print(traceback.format_exc())
+        result = server.connect()
+        if result is not None:
+            redfish_list.append(server)
     return(redfish_list)
+
+from concurrent.futures import ThreadPoolExecutor
+
+
+def parallel_open_sessions(hostlist):
+    #def connect_host(server):
+    #    try:
+    #        server.bmc = RedFishBMC(server.hostname, username=server.username, password=server.password)
+    #        return server
+    #    except redfish.rest.v1.InvalidCredentialsError:
+    #        log.error(f"Invalid credentials for {server.hostname}")
+    #        return None
+    #    except Exception as exc:
+    #        log.error(f"Error opening connections to {server.hostname}: {exc}")
+    #        print(traceback.format_exc())
+    #        return None
+
+    opened_list = list()
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        #futures = [executor.submit(connect_host, host) for host in hostlist]
+        futures = [executor.submit(Server.connect, host) for host in hostlist]
+        for future in futures:
+            result = future.result()
+            if result is not None:
+                opened_list.append(result)
+
+
+    return opened_list
+
+
 
 def close_sessions(hostlist):
     for host in hostlist:
-        host.redfish.logout()
+        host.close()
+
+def ends_with_hex(s):
+    """Check if string ends with _ and 4 hex digits"""
+    if len(s) < 5:  # Need at least 5 chars: _XXXX
+        return False
+    if s[-5] != '_':  # Must have underscore
+        return False
+    try:
+        # Try to convert last 4 chars to hex
+        int(s[-4:], 16)
+        return True
+    except ValueError:
+        return False
+
+def trim_trailing_hex(s):
+    """Trim trailing hex digits from string, return the string without trailing hex digits"""
+    if not ends_with_hex(s):
+        return s
+    else:
+        return s[:-5]
+
+# for the given server (bmc), try to find the settings in all_bios_settings, verify that the keys match, then return it
+# match the keys using fuzzy logic, and return the actual keys (prevents failures).
+# If there is no match for the server model, try finding one that matches closely?
+from rapidfuzz import process, fuzz
+def find_bios_settings(server, all_bios_settings):
+    wild = False
+    if server.manufacturer in all_bios_settings:
+        mfg = all_bios_settings[server.manufacturer]
+    else:
+        log.error(f"Server {server.hostname}: Unknown manufacturer: {server.manufacturer}.  Aborting.")
+        return None
+    if server.arch in mfg:
+        arch = mfg[server.arch]
+    else:
+        log.error(f"Server {server.hostname}: Unknown processor architecture: {server.architecture}.  Aborting.")
+        return None
+    if server.model in arch:
+        base_settings = arch[server.model] # exact match
+    elif '*' in arch:
+        base_settings = arch['*']  # wildcard entry - give it a try
+        wild = True
+
+    derived_keys = dict()
+    #if server.manufacturer == "Supermicro":
+    #    preprocessor = trim_trailing_hex
+    #else:
+    #    preprocessor = None
+    preprocessor = trim_trailing_hex if server.manufacturer == "Supermicro" else None
+
+    log.debug(f"{server.manufacturer} using {preprocessor}")
+    # server_full_bios are what is set on the server now - all bios settings
+    server_full_bios = server.bios_settings.keys()
+    # base settings are a subset of settings from the bios_settings.yml file - what we want the settings to be
+    for setting in base_settings.keys():
+        # check to see if the settings we want to make are actual settings in the BIOS of this server
+        keyword = process.extract(setting, server_full_bios, processor=preprocessor, scorer=fuzz.ratio, limit=1)
+        if len(keyword) == 0:
+            log.error(f"Server {server.hostname}: Unknown setting: {setting}. Aborting.")
+            return None
+
+        keyword, similarity, _ = keyword[0]
+        # is it an exact match?
+        if similarity != 100.0:
+            #log.warning(
+            #   f"BIOS Keys for {server.hostname}/{server.manufacturer}/{server.model} do not match the definition")
+            if not wild:
+                log.warning(f"BIOS Keys are different than previously recorded - {setting}")
+            else:
+                log.warning(f"Trying to match BIOS Keys from wildcard definition")
+            if similarity > 75:
+                log.info(f"Match found? {server.hostname}/{server.manufacturer}/{server.model}/{setting} is {keyword}, similarity {similarity}")
+                derived_keys[setting] = (keyword, similarity)
+            else:
+                log.warning( f"Match NOT found? {server.hostname}/{server.manufacturer}/{server.model}/{setting} is {keyword}, similarity {similarity}. Skipping setting")
+        else:
+            derived_keys[setting] = (keyword, similarity)
+
+    # at this point, we should analyze the results - normally they should all be 100.0% similarity,
+    # unless this server is running a different BIOS version, but they should be very similar...
+    # unless a wildcard was used - then all bets are off
+    this_servers_settings = dict()
+    for setting, target_tuple in derived_keys.items():
+        this_servers_settings[target_tuple[0]] = base_settings[setting]   # sets the value
+
+    #if wild:
+    #    print(f"We used a wildcard for {server.hostname}: '{server.model}'.")
+
+    if len(base_settings.keys()) != len(derived_keys.keys()):
+        log.warning(f"{server.hostname}'s settings do not match defined settings for {server.manufacturer}/{server.model}.")
+        log.warning(f"This server's settings should be manually reviewed")
+
+    return this_servers_settings
 
 def main():
     # parse arguments
@@ -140,7 +431,7 @@ def main():
                         default="host_config.csv")
     parser.add_argument("-b", "--bios", type=str, nargs="?", help="bios configuration filename",
                         default="bios_settings.yml")
-    parser.add_argument("--bmc_config", dest="bmc_config", default=False, action="store_true",
+    parser.add_argument("--bmc-config", dest="bmc_config", default=False, action="store_true",
                         help="Configure the BMCs to allow RedFish access")
     parser.add_argument("--fix", dest="fix", default=False, action="store_true",
                         help="Correct any bios settings that do not match the definition")
@@ -148,16 +439,22 @@ def main():
                         help="Reboot server if changes have been made")
     parser.add_argument("--dump", dest="dump", default=False, action="store_true",
                         help="Print out BIOS settings only")
-    parser.add_argument("--reset_bios", dest="reset_bios", default=False, action="store_true",
+    parser.add_argument("--save-defaults", dest="save", default=False, action="store_true",
+                        help="Save default BIOS settings to defaults-database - should be factory reset values")
+    parser.add_argument("--defaults-database", dest="defaults_database", default="defaults-db.yml",
+                        help="Filename of the factory defaults-database")
+    parser.add_argument("--reset-bios", dest="reset_bios", default=False, action="store_true",
                         help="Reset BIOS to default settings.  To also reboot, add the --reboot option")
     parser.add_argument("--diff", dest="diff", nargs=2, default=False, help="Compare 2 hosts BIOS settings")
+    parser.add_argument("--diff-defaults", dest="diff_defaults", default=False, action="store_true",
+                        help="Compare hosts BIOS settings to factory defaults")
     # parser.add_argument("--version", dest="version", default=False, action="store_true",
     #                    help="Display version number")
-    parser.add_argument("--bmc_ips", dest="bmc_ips", type=str, nargs="*",
+    parser.add_argument("--bmc-ips", dest="bmc_ips", type=str, nargs="*",
                         help="a list of hosts to configure, or none to use cluster beacons", default=None)
-    parser.add_argument("--bmc_username", dest="bmc_username", type=str, nargs=1,
+    parser.add_argument("--bmc-username", dest="bmc_username", type=str, nargs=1,
                         help="a username to use on all hosts in --bmc_ips", default=None)
-    parser.add_argument("--bmc_password", dest="bmc_password", type=str, nargs=1,
+    parser.add_argument("--bmc-password", dest="bmc_password", type=str, nargs=1,
                         help="a password to use on all hosts in --bmc_ips", default=None)
     parser.add_argument("-v", "--verbose", dest='verbosity', action='store_true', help="enable verbose mode")
     parser.add_argument("--version", dest='version', action='store_true', help="report program version and exit")
@@ -165,7 +462,7 @@ def main():
     args = parser.parse_args()
 
     if args.version:
-        print(f"{progname} version 2025.03.14")
+        print(f"{progname} version 2025.09.03")
         sys.exit(0)
 
     # local modules - override a module's logging level
@@ -177,7 +474,6 @@ def main():
     # set up logging in a standard way...
     configure_logging(log, args.verbosity)
     #log_to_file("paramiko.log", logging.DEBUG)
-
 
     # if they provided a list of BMC IPs, they must also provide a username and password
     if args.bmc_ips is not None:
@@ -194,18 +490,23 @@ def main():
             log.error(f"Unable to open host configuration file: {exc}")
             sys.exit(1)
 
+    # create objects from the config in the input file or command-line
+    servers_list = list()
+    for host in conf['hosts']:   # host is a dict, {name, user, password}
+        servers_list.append(Server(host['name'], host['user'], host['password']))
+
     # did the user ask us to make sure the BMC is set with ipmi over lan and redfish, etc?
     if args.bmc_config:
         log.info("Configuring BMCs")
-        for host in conf['hosts']:
+        for host in servers_list:
             log.info(f"Configuring {host['name']}")
-            bmc_setup(host['name'], host['user'], host['password'])
+            bmc_setup(host.hostname, host.username, host.password)
         log.info("BMCs have been configured")
         sys.exit(0)
 
-    # try to load the BIOS settings
+    # try to load the BIOS settings (the entire database) (the entire database, all server types/models)
     try:
-        desired_bios_settings = load_config(args.bios)
+        all_bios_settings = load_config(args.bios)
     except Exception as exc:
         log.error(f"Unable to parse bios settings configuration file: {exc}")
         sys.exit(1)
@@ -215,63 +516,73 @@ def main():
         hostlist = list()
         for c_host in args.diff:
             try:
-                hostlist.append([x for x in conf['hosts'] if x['name'] == c_host][0])
+                hostlist.append([x for x in servers_list if x.hostname == c_host][0])
             except:
                 log.error(f"host {c_host} not in {args.hostconfigfile}")
                 sys.exit(1)
     else:
         # all hosts
-        hostlist = conf['hosts']
+        hostlist = servers_list
 
     # open connections to all the hosts - redfish_list is a list of RedFishBMC objects
-    redfish_list = open_sessions(hostlist)
+    log.info("Opening sessions to hosts:")
+    redfish_list = parallel_open_sessions(hostlist)
 
     if args.diff:
         if len(redfish_list) != 2:
-            log.error(f"hostlist has too few members to continue")
+            log.error(f"you must specify exactly 2 hosts to diff them")
         elif not bios_diff(redfish_list):
             log.info("The servers have identical BIOS settings")
+    elif args.diff_defaults:
+        diff_defaults(args.defaults_database, redfish_list)
+        pass
     elif args.reset_bios:
-        for bmc in redfish_list:
+        for server in redfish_list:
             # rest the bios...
-            bmc.reset_settings_to_default()
-            log.info(f"{bmc.name} has been reset to factory defaults")
+            server.bmc.reset_settings_to_default()
+            log.info(f"{server.bmc.name} has been reset to factory defaults")
             if args.reboot:
-                bmc.reboot()
-                log.info(f"{bmc.name} has been rebooted")
+                server.bmc.reboot()
+                log.info(f"{server.bmc.name} has been rebooted")
+    elif args.save:
+        save_bmc_db(redfish_list, args.defaults_database)
     else:
         # check BIOS settings
         hosts_needing_changes = list()
         fixed_hosts = list()
         systems_rebooted = list()
-        for bmc in redfish_list:
+        # Loop through the servers
+        for server in redfish_list:
             if args.dump:
-                bmc.print_settings()
+                server.bmc.print_settings()
                 continue
             else:
-                count = bmc.check_settings(desired_bios_settings[bmc.vendor][bmc.arch])
-            log.info(f"")
+                settings = find_bios_settings(server, all_bios_settings)
+                # Vince left off here
+                #count = bmc.check_settings(desired_bios_settings[bmc.manufacturer][bmc.arch][bmc.model])
+                count = server.bmc.check_settings(settings)
+            #log.info(f"")
             if count > 0:
-                log.warning(f"{count} changes are needed on {bmc.name}")
-                hosts_needing_changes.append(bmc)
+                log.info(f"{count} changes are needed on {server.hostname}")
+                hosts_needing_changes.append(server)
                 if args.fix:
-                    if bmc.change_settings(desired_bios_settings[bmc.vendor][bmc.arch]):
-                        fixed_hosts.append(bmc)
+                    if server.bmc.change_settings(settings):
+                        fixed_hosts.append(server)
                     else:
-                        log.error(f"Unable to fix {bmc.name}")
+                        log.error(f"Unable to fix {server.hostname}")
             else:
-                log.warning(f"No changes are needed on {bmc.name}")
+                log.warning(f"No changes are needed on {server.hostname}")
             log.info("")
             # if they said reboot, reboot
             if args.reboot:
-                if args.fix and bmc in fixed_hosts: # --fix --reboot implies rebooting only the hosts that were fixed
-                    log.info(f"Rebooting {bmc.name}")
-                    bmc.reboot()
-                    systems_rebooted.append(bmc)
+                if args.fix and server in fixed_hosts: # --fix --reboot implies rebooting only the hosts that were fixed
+                    log.info(f"Rebooting {server.hostname}")
+                    server.bmc.reboot()
+                    systems_rebooted.append(server)
                 elif not args.fix:  # they asked to reboot all hosts
-                    log.info(f"Rebooting {bmc.name}")
-                    bmc.reboot()
-                    systems_rebooted.append(bmc)
+                    log.info(f"Rebooting {server.hostname}")
+                    server.bmc.reboot()
+                    systems_rebooted.append(server)
 
         if not args.fix:
             log.info(f"There are {len(hosts_needing_changes)} hosts needing changes")
