@@ -99,8 +99,9 @@ def generate_config(bmc_ips, bmc_username, bmc_password):
         conf['hosts'].append({'name': ip, 'user': bmc_username[0], 'password': bmc_password[0]})
     return conf
 
-def save_bmc_db(redfish_list, defaults_database):
+def save_bmc_db(redfish_list, defaults_database, force=False):
     bmc_db = None
+    changes_made = False
     try:
         bmc_db = load_config(defaults_database)
     except FileNotFoundError: # it's ok if it doesn't exist - we'll create it
@@ -129,13 +130,21 @@ def save_bmc_db(redfish_list, defaults_database):
 
         # always overwrite any old settings
         if model in bmc_db[manufacturer][architecture]:
-            log.warning(f"{manufacturer}/{architecture}/{model} found in database, overwriting")
-        bmc_db[manufacturer][architecture][model] = bios_settings
+            if force:
+                log.warning(f"{manufacturer}/{architecture}/{model} found in database, forcing overwrite")
+                bmc_db[manufacturer][architecture][model] = bios_settings
+                changes_made = True
+            else:
+                log.info(f"{manufacturer}/{architecture}/{model} found in database; to force overwrite use --force")
+        else:
+            bmc_db[manufacturer][architecture][model] = bios_settings
+            changes_made = True
 
-    with open(defaults_database, 'w') as f:
-        f.write('# Bios Defaults Database\n')
-        f.write('# This should contain the default/factory reset values\n')
-        yaml.dump(bmc_db, f, default_flow_style=False)
+    if changes_made:
+        with open(defaults_database, 'w') as f:
+            f.write('# Bios Defaults Database\n')
+            f.write('# This should contain the default/factory reset values\n')
+            yaml.dump(bmc_db, f, default_flow_style=False)
 
 # Generate the bios defs for a server model so we can later set the values on new servers
 def diff_defaults(defaults_database, redfish_list):
@@ -443,6 +452,8 @@ def main():
                         help="Save default BIOS settings to defaults-database - should be factory reset values")
     parser.add_argument("--defaults-database", dest="defaults_database", default="defaults-db.yml",
                         help="Filename of the factory defaults-database")
+    parser.add_argument("-f", "--force", dest="force", default=False, action="store_true",
+                        help="Force overwriting existing BIOS settings and such")
     parser.add_argument("--reset-bios", dest="reset_bios", default=False, action="store_true",
                         help="Reset BIOS to default settings.  To also reboot, add the --reboot option")
     parser.add_argument("--diff", dest="diff", nargs=2, default=False, help="Compare 2 hosts BIOS settings")
@@ -545,7 +556,7 @@ def main():
                 server.bmc.reboot()
                 log.info(f"{server.bmc.name} has been rebooted")
     elif args.save:
-        save_bmc_db(redfish_list, args.defaults_database)
+        save_bmc_db(redfish_list, args.defaults_database, force=args.force)
     else:
         # check BIOS settings
         hosts_needing_changes = list()
