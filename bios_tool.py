@@ -361,7 +361,7 @@ def trim_trailing_hex(s):
 # match the keys using fuzzy logic, and return the actual keys (prevents failures).
 # If there is no match for the server model, try finding one that matches closely?
 from rapidfuzz import process, fuzz
-def find_bios_settings(server, all_bios_settings):
+def find_bios_settings(server, all_bios_settings, force=False):
     wild = False
     if server.manufacturer in all_bios_settings:
         mfg = all_bios_settings[server.manufacturer]
@@ -407,8 +407,10 @@ def find_bios_settings(server, all_bios_settings):
             else:
                 log.warning(f"Trying to match BIOS Keys from wildcard definition")
             if similarity > 75:
-                log.info(f"Match found? {server.hostname}/{server.manufacturer}/{server.model}/{setting} is {keyword}, similarity {similarity}")
-                derived_keys[setting] = (keyword, similarity)
+                log.info(f"Possible match found: {server.hostname}/{server.manufacturer}/{server.model}/{setting} is {keyword}, similarity {similarity}")
+                if force:
+                    log.info(f"Forcing setting: {setting}.")
+                    derived_keys[setting] = (keyword, similarity)
             else:
                 log.warning( f"Match NOT found? {server.hostname}/{server.manufacturer}/{server.model}/{setting} is {keyword}, similarity {similarity}. Skipping setting")
         else:
