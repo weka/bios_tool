@@ -1,5 +1,5 @@
 name,user,password
-172.29.3.110,root,Administrator
-172.29.3.101,ADMIN,ADMIN
-172.29.1.235,Administrator,WekaService
-172.29.3.65,ADMIN,_PASSWORD_
+172.29.3.110,root,<secret password>
+172.29.3.101,ADMIN,<secret password>
+172.29.1.235,Administrator,<secret password>
+172.29.3.65,ADMIN,<secret password>
