@@ -461,8 +461,8 @@ def main():
     parser.add_argument("--diff", dest="diff", nargs=2, default=False, help="Compare 2 hosts BIOS settings")
     parser.add_argument("--diff-defaults", dest="diff_defaults", default=False, action="store_true",
                         help="Compare hosts BIOS settings to factory defaults")
-    # parser.add_argument("--version", dest="version", default=False, action="store_true",
-    #                    help="Display version number")
+    parser.add_argument("--version", dest="version", default=False, action="store_true",
+                        help="Display version number")
     parser.add_argument("--bmc-ips", dest="bmc_ips", type=str, nargs="*",
                         help="a list of hosts to configure, or none to use cluster beacons", default=None)
     parser.add_argument("--bmc-username", dest="bmc_username", type=str, nargs=1,
@@ -475,7 +475,7 @@ def main():
     args = parser.parse_args()
 
     if args.version:
-        print(f"{progname} version 2025.09.03")
+        print(f"{progname} version 2025.09.19")
         sys.exit(0)
 
     # local modules - override a module's logging level
@@ -491,7 +491,7 @@ def main():
     # if they provided a list of BMC IPs, they must also provide a username and password
     if args.bmc_ips is not None:
         if args.bmc_username is None or args.bmc_password is None:
-            log.error("You must provide a username and password when using --bmc_ips")
+            log.error("You must provide a username and password when using --bmc-ips")
             sys.exit(1)
         log.info(f"Using BMC IPs - ignoring {args.hostconfigfile}")
         conf = generate_config(args.bmc_ips, args.bmc_username, args.bmc_password)

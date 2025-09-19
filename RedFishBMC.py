@@ -204,7 +204,7 @@ class RedFishBMC(object):
         return count
 
     def reset_settings_to_default(self):
-        resp = self.redfish.post(self.reset_bios_uri, body=None)
+        resp = self.redfish.post(self.reset_bios_uri, body={})
         if resp.status not in [200,201,202,203,204]:
             error_dict = resp.dict['error'] if 'error' in resp.dict else None
             log.error(f"An http response of '{resp.status}' was returned attempting to reset bios to default on {self.name}.")
