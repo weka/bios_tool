@@ -470,7 +470,6 @@ def main():
     parser.add_argument("--bmc-password", dest="bmc_password", type=str, nargs=1,
                         help="a password to use on all hosts in --bmc_ips", default=None)
     parser.add_argument("-v", "--verbose", dest='verbosity', action='store_true', help="enable verbose mode")
-    parser.add_argument("--version", dest='version', action='store_true', help="report program version and exit")
 
     args = parser.parse_args()
 
