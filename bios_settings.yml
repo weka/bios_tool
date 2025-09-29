@@ -1,7 +1,6 @@
 WEKA:
   AMD:
     '*':
-      #WEKApod - R6615:
       LogicalProc: Enabled
       NumaNodesPerSocket: "1"
       PcieAspmL1: Disabled
@@ -18,6 +17,27 @@ WEKA:
       BootMode: Uefi
       SecureBoot: Disabled
       SerialComm: OnConRedir
+      IommuSupport: Disabled
+      ProcX2Apic: Disabled
+    WEKApod - R6615:
+      LogicalProc: Enabled
+      NumaNodesPerSocket: "1"
+      PcieAspmL1: Disabled
+      ProcCStates: Disabled
+      ProcPwrPerf: MaxPerf
+      ProcVirtualization: Disabled
+      SysProfile: Custom
+      WorkloadProfile: NotConfigured
+      DeterminismSlider: PerfDeterminism
+      DfCState: Disabled
+      DfPstateFreqOptimizer: Disabled
+      DfPstateLatencyOptimizer: Disabled
+      PowerProfileSelect: MaxIOPerformanceMode
+      BootMode: Uefi
+      SecureBoot: Disabled
+      SerialComm: OnConRedir
+      IommuSupport: Disabled
+      ProcX2Apic: Disabled
 
 Dell Inc.:
   AMD:
@@ -38,6 +58,8 @@ Dell Inc.:
       BootMode: Uefi
       SecureBoot: Disabled
       SerialComm: OnConRedir
+      IommuSupport: Disabled
+      ProcX2Apic: Disabled
     '*':
       LogicalProc: Enabled
       NumaNodesPerSocket: "1"
