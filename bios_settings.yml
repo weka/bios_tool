@@ -1,7 +1,7 @@
 WEKA:
   AMD:
     '*':
-      LogicalProc: Enabled
+      LogicalProc: Disabled
       NumaNodesPerSocket: "1"
       PcieAspmL1: Disabled
       ProcCStates: Disabled
@@ -20,7 +20,7 @@ WEKA:
       IommuSupport: Disabled
       ProcX2Apic: Disabled
     WEKApod - R6615:
-      LogicalProc: Enabled
+      LogicalProc: Disabled
       NumaNodesPerSocket: "1"
       PcieAspmL1: Disabled
       ProcCStates: Disabled
@@ -42,7 +42,7 @@ WEKA:
 Dell Inc.:
   AMD:
     PowerEdge R6615:
-      LogicalProc: Enabled
+      LogicalProc: Disabled
       NumaNodesPerSocket: "1"
       PcieAspmL1: Disabled
       ProcCStates: Disabled
@@ -61,7 +61,7 @@ Dell Inc.:
       IommuSupport: Disabled
       ProcX2Apic: Disabled
     '*':
-      LogicalProc: Enabled
+      LogicalProc: Disabled
       NumaNodesPerSocket: "1"
       PcieAspmL1: Disabled
       ProcCStates: Disabled
@@ -128,7 +128,7 @@ HPE:
       NumaGroupSizeOpt: Clustered
       PerformanceDeterminism: PerformanceDeterministic
       PowerRegulator: StaticHighPerf
-      ProcSMT: Enabled
+      ProcSMT: Disabled
       ProcAmdIoVt: Disabled
       BootMode: Uefi
       SecureBootStatus: Disabled
@@ -147,7 +147,7 @@ HPE:
       NumaGroupSizeOpt: Clustered
       PerformanceDeterminism: PerformanceDeterministic
       PowerRegulator: StaticHighPerf
-      ProcSMT: Enabled
+      ProcSMT: Disabled
       ProcAmdIoVt: Disabled
       BootMode: Uefi
       SecureBootStatus: Disabled
@@ -168,12 +168,12 @@ Supermicro:
       IOMMU_00EA: Disabled
       NUMANodesPerSocket_703E: NPS1
       PowerProfileSelection_00F8: Maximum IO Performance Mode
-      SMTControl_00CB: Enabled
+      SMTControl_00CB: Disabled
     '*':
       ACPISRATL3CacheAsNUMADomain: Disabled
       IOMMU: Disabled
       NUMANodesPerSocket: NPS1
-      SMTControl: Enabled
+      SMTControl: Disabled
       DFCstates: Disabled
       GlobalC_stateControl: Disabled
       DeterminismControl: Manual
@@ -197,7 +197,7 @@ Lenovo:
       Processors_DeterminismSlider: Performance
       Processors_DFC_States: Disabled
       DevicesandIOPorts_IOMMU: Disabled
-      Processors_SMTMode: Enabled
+      Processors_SMTMode: Disabled
       Power_PCIePowerBrake: Disabled
       OperatingModes_ChooseOperatingMode: CustomMode
       LegacyBIOS_LegacyBIOS: Disabled
@@ -210,7 +210,7 @@ Lenovo:
       Processors_DeterminismSlider: Performance
       Processors_DFC_States: Disabled
       DevicesandIOPorts_IOMMU: Disabled
-      Processors_SMTMode: Enabled
+      Processors_SMTMode: Disabled
       Power_PCIePowerBrake: Disabled
       OperatingModes_ChooseOperatingMode: CustomMode
       LegacyBIOS_LegacyBIOS: Disabled
