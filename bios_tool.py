@@ -120,24 +120,25 @@ def save_bmc_db(redfish_list, defaults_database, force=False):
         model = server.model
         architecture = server.arch
         #bios_version = bmc.bios_version
-        the_dict = server.bmc.bios_data.dict
-        the_obj = server.bmc.bios_data.obj
-        bios_settings = server.bmc.bios_data.dict['Attributes']
+        #the_dict = server.bmc.bios_data.dict   # not used anymore
+        #the_obj = server.bmc.bios_data.obj
+        #bios_settings = server.bmc.bios_data.dict['Attributes']  # should be server.bios_settings?
+        #bios_settings = server.bios_settings
         if manufacturer not in bmc_db:
             bmc_db[manufacturer] = dict()
         if architecture not in bmc_db[manufacturer]:
             bmc_db[manufacturer][architecture] = dict()
 
-        # always overwrite any old settings
+        # always overwrite any old settings?
         if model in bmc_db[manufacturer][architecture]:
             if force:
                 log.warning(f"{manufacturer}/{architecture}/{model} found in database, forcing overwrite")
-                bmc_db[manufacturer][architecture][model] = bios_settings
+                bmc_db[manufacturer][architecture][model] = server.bios_settings
                 changes_made = True
             else:
                 log.info(f"{manufacturer}/{architecture}/{model} found in database; to force overwrite use --force")
         else:
-            bmc_db[manufacturer][architecture][model] = bios_settings
+            bmc_db[manufacturer][architecture][model] = server.bios_settings
             changes_made = True
 
     if changes_made:
@@ -226,9 +227,9 @@ def bios_diff(hostlist):
         print()
         print(f"ERROR: Hosts are of different manufacturer! {hosta.manufacturer} vs {hostb.manufacturer}")
         sys.exit(1)
-    if hosta.bios_version != hostb.bios_version:
+    if hosta.bmc.bios_version != hostb.bmc.bios_version:
         print()
-        print(f"WARNING: Hosts have different BIOS versions! {hosta.bios_version} vs {hostb.bios_version}")
+        print(f"WARNING: Hosts have different BIOS versions! {hosta.bmc.bios_version} vs {hostb.bmc.bios_version}")
         # note:  Supermicro has a different BIOS keys in every bios version (all end in _XXXX, where XXXX is hex)
         # the XXXX is different in different versions.  This means that the BIOS settings are not comparable
         # between different versions of the BIOS.
@@ -243,8 +244,8 @@ def bios_diff(hostlist):
     #    hosta_bios = hostlist[0].bios_data.dict['Attributes']
     #    hostb_bios = hostlist[1].bios_data.dict['Attributes']
 
-    hosta_bios = hostlist[0].bios_data.dict['Attributes']
-    hostb_bios = hostlist[1].bios_data.dict['Attributes']
+    hosta_bios = hostlist[0].bios_settings
+    hostb_bios = hostlist[1].bios_settings
 
     diff = list()                  #  Entries are [setting, value_a, value_b]
     settings_not_present = list()  #  Entries are [setting, value_a, value_b]
@@ -263,13 +264,13 @@ def bios_diff(hostlist):
     if len(diff) > 0:
         print()
         print("Settings that are different between the servers:")
-        print(tabulate(diff, headers=["Setting", hosta.name, hostb.name]))
+        print(tabulate(diff, headers=["Setting", hosta.hostname, hostb.hostname]))
         are_different = True
 
     if len(settings_not_present) > 0:
         print()
         print("Settings that are in one server and not the other:")
-        print(tabulate(settings_not_present, headers=["Setting", hosta.name, hostb.name]))
+        print(tabulate(settings_not_present, headers=["Setting", hosta.hostname, hostb.hostname]))
         are_different = True
 
     return are_different
@@ -292,16 +293,6 @@ def diff_dicts(dict1, dict2):
 
     return (diff, keys_not_present_in1, keys_not_present_in2)
 
-
-def open_sessions(hostlist):
-    # open connections to all the hosts
-    redfish_list = list()
-    for server in hostlist:
-        log.info(f"Fetching BIOS settings of host {host['name']}")
-        result = server.connect()
-        if result is not None:
-            redfish_list.append(server)
-    return(redfish_list)
 
 from concurrent.futures import ThreadPoolExecutor
 
