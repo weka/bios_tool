@@ -143,6 +143,8 @@ def save_bmc_db(redfish_list, defaults_database, force=False):
             f.write('# This should contain the default/factory reset values\n')
             yaml.dump(bmc_db, f, default_flow_style=False)
 
+    return changes_made
+
 # Generate the bios defs for a server model so we can later set the values on new servers
 def diff_defaults(defaults_database, redfish_list):
     bmc_db = None
@@ -329,6 +331,7 @@ def trim_trailing_hex(s):
 # If there is no match for the server model, try finding one that matches closely?
 from rapidfuzz import process, fuzz
 def find_bios_settings(server, all_bios_settings, force=False):
+    base_settings = None
     wild = False
     if server.manufacturer in all_bios_settings:
         mfg = all_bios_settings[server.manufacturer]
@@ -345,6 +348,9 @@ def find_bios_settings(server, all_bios_settings, force=False):
     elif '*' in arch:
         base_settings = arch['*']  # wildcard entry - give it a try
         wild = True
+
+    if base_settings is None:
+        return None
 
     derived_keys = dict()
     preprocessor = trim_trailing_hex if server.manufacturer == "Supermicro" else None
