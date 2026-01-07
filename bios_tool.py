@@ -444,7 +444,7 @@ def main():
     args = parser.parse_args()
 
     if args.version:
-        print(f"{progname} version 2025.11.11")
+        print(f"{progname} version 2026.01.06")
         sys.exit(0)
 
     # local modules - override a module's logging level
