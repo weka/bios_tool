@@ -1,24 +1,14 @@
 import argparse
 import logging
 import sys
-import traceback
-from asyncore import dispatcher_with_send
-from itertools import count
-from logging import exception, setLogRecordFactory
-from platform import architecture
-from wsgiref.simple_server import server_version
-
 import redfish
 import yaml
-from ply.yacc import resultlimit
 from redfish.rest.v1 import RetriesExhaustedError
 
 from wekapyutils.wekalogging import configure_logging, register_module
 from RedFishBMC import RedFishBMC
 from BMCsetup import bmc_setup, get_ipmi_ip
 from tabulate import tabulate
-
-# from paramiko.util import log_to_file
 
 # get root logger
 log = logging.getLogger()
@@ -52,7 +42,6 @@ class Server(object):
         except Exception as exc:
             log.error(f"Error opening connections to {self.hostname}: {exc}")
 
-        # print(traceback.format_exc())
         return None
 
 
@@ -68,29 +57,41 @@ def csv_load(f):
     :return: list of dictionaries
     """
     import csv
-    reader = csv.DictReader(f)
-    #reader_list = list(reader)
-    #for row in reader:
-    #    print(row)
-    return {"hosts":list(reader)}
+    reader = None
+    exc = None
+    try:
+        reader = csv.DictReader(f)
+    except Exception as exc:
+        #log.error(f"Error reading CSV file: {exc}")
+        return None, exc
+    return {"hosts":list(reader)}, exc
 
+def yaml_load(f):
+    data = None
+    exc = None
+    try:
+        data = yaml.unsafe_load(f)
+    except Exception as exc:
+        pass
+        #log.error(f"Error reading YAML file: {exc}")
+        #raise
+    return data, exc
 
 # load a config file - either CSV or YAML
 def load_config(inputfile):
+    data = None
     try:
         f = open(inputfile)
     except Exception as exc:
         raise
-    with f:
-        try:
-            if inputfile.endswith(".csv"):
-                return csv_load(f)
-            return yaml.load(f, Loader=yaml.FullLoader)
-        except AttributeError:
-            return yaml.load(f)
-        except Exception as exc:
-            log.error(f"Error reading config file: {exc}")
-            raise
+    data, exc = yaml_load(f)
+    if type(data) is not dict:   # yaml_load returns a dict; if not a dict, it's an error reading file
+        f.seek(0)   # rewind the file
+        data, exc = csv_load(f)     # try CSV
+    if type(data) is not dict:
+        log.error(f"Error reading config file: {exc}")
+        return None
+    return data
 
 def generate_config(bmc_ips, bmc_username, bmc_password):
     conf = dict()
@@ -119,11 +120,6 @@ def save_bmc_db(redfish_list, defaults_database, force=False):
         manufacturer = server.manufacturer
         model = server.model
         architecture = server.arch
-        #bios_version = bmc.bios_version
-        #the_dict = server.bmc.bios_data.dict   # not used anymore
-        #the_obj = server.bmc.bios_data.obj
-        #bios_settings = server.bmc.bios_data.dict['Attributes']  # should be server.bios_settings?
-        #bios_settings = server.bios_settings
         if manufacturer not in bmc_db:
             bmc_db[manufacturer] = dict()
         if architecture not in bmc_db[manufacturer]:
@@ -237,13 +233,6 @@ def bios_diff(hostlist):
         # This could be implemented by copying the hosta_bios and hostb_bios dictionaries and removing the _XXXX
         # from the keys.  Then we could compare the two dictionaries.
 
-    #if hosta.manufacturer == "Supermicro":
-    #    hosta_bios = trim_supermicro_dict(hostlist[0].bios_data.dict['Attributes'])
-    #    hostb_bios = trim_supermicro_dict(hostlist[1].bios_data.dict['Attributes'])
-    #else:
-    #    hosta_bios = hostlist[0].bios_data.dict['Attributes']
-    #    hostb_bios = hostlist[1].bios_data.dict['Attributes']
-
     hosta_bios = hostlist[0].bios_settings
     hostb_bios = hostlist[1].bios_settings
 
@@ -298,21 +287,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 
 def parallel_open_sessions(hostlist):
-    #def connect_host(server):
-    #    try:
-    #        server.bmc = RedFishBMC(server.hostname, username=server.username, password=server.password)
-    #        return server
-    #    except redfish.rest.v1.InvalidCredentialsError:
-    #        log.error(f"Invalid credentials for {server.hostname}")
-    #        return None
-    #    except Exception as exc:
-    #        log.error(f"Error opening connections to {server.hostname}: {exc}")
-    #        print(traceback.format_exc())
-    #        return None
-
     opened_list = list()
     with ThreadPoolExecutor(max_workers=10) as executor:
-        #futures = [executor.submit(connect_host, host) for host in hostlist]
         futures = [executor.submit(Server.connect, host) for host in hostlist]
         for future in futures:
             result = future.result()
@@ -371,10 +347,6 @@ def find_bios_settings(server, all_bios_settings, force=False):
         wild = True
 
     derived_keys = dict()
-    #if server.manufacturer == "Supermicro":
-    #    preprocessor = trim_trailing_hex
-    #else:
-    #    preprocessor = None
     preprocessor = trim_trailing_hex if server.manufacturer == "Supermicro" else None
 
     log.debug(f"{server.manufacturer} using {preprocessor}")
@@ -430,11 +402,10 @@ def main():
     progname = sys.argv[0]
     parser = argparse.ArgumentParser(description="View/Change BIOS Settings on servers")
 
-    # parser.add_argument("host", type=str, nargs="?", help="a host to talk to", default="localhost")
-    parser.add_argument("-c", "--hostconfigfile", type=str, nargs="?", help="filename of host config file",
-                        default="host_config.csv")
-    parser.add_argument("-b", "--bios", type=str, nargs="?", help="bios configuration filename",
-                        default="bios_settings.yml")
+    parser.add_argument("-c", "--hostconfigfile", type=str, nargs="?", default="host_config.csv",
+                        help = "filename of host config file. Default is host_config.csv")
+    parser.add_argument("-b", "--bios", type=str, nargs="?", default="bios_settings.yml",
+                        help="bios configuration filename. Default is bios_settings.yml")
     parser.add_argument("--bmc-config", dest="bmc_config", default=False, action="store_true",
                         help="Configure the BMCs to allow RedFish access")
     parser.add_argument("--fix", dest="fix", default=False, action="store_true",
@@ -442,11 +413,11 @@ def main():
     parser.add_argument("--reboot", dest="reboot", default=False, action="store_true",
                         help="Reboot server if changes have been made")
     parser.add_argument("--dump", dest="dump", default=False, action="store_true",
-                        help="Print out BIOS settings only")
+                        help="Print out current BIOS settings only")
     parser.add_argument("--save-defaults", dest="save", default=False, action="store_true",
                         help="Save default BIOS settings to defaults-database - should be factory reset values")
     parser.add_argument("--defaults-database", dest="defaults_database", default="defaults-db.yml",
-                        help="Filename of the factory defaults-database")
+                        help="Filename of the factory defaults-database.  Default is defaults-db.yml")
     parser.add_argument("-f", "--force", dest="force", default=False, action="store_true",
                         help="Force overwriting existing BIOS settings and such")
     parser.add_argument("--reset-bios", dest="reset_bios", default=False, action="store_true",
@@ -457,7 +428,7 @@ def main():
     parser.add_argument("--version", dest="version", default=False, action="store_true",
                         help="Display version number")
     parser.add_argument("--bmc-ips", dest="bmc_ips", type=str, nargs="*",
-                        help="a list of hosts to configure, or none to use cluster beacons", default=None)
+                        help="a list of hosts to configure instead of using the host_config.csv", default=None)
     parser.add_argument("--bmc-username", dest="bmc_username", type=str, nargs=1,
                         help="a username to use on all hosts in --bmc_ips", default=None)
     parser.add_argument("--bmc-password", dest="bmc_password", type=str, nargs=1,
