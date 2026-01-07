@@ -15,7 +15,7 @@ from redfish.rest.v1 import RetriesExhaustedError
 
 from wekapyutils.wekalogging import configure_logging, register_module
 from RedFishBMC import RedFishBMC
-from BMCsetup import bmc_setup
+from BMCsetup import bmc_setup, get_ipmi_ip
 from tabulate import tabulate
 
 # from paramiko.util import log_to_file
@@ -423,6 +423,8 @@ def find_bios_settings(server, all_bios_settings, force=False):
 
     return this_servers_settings
 
+
+
 def main():
     # parse arguments
     progname = sys.argv[0]
@@ -526,6 +528,23 @@ def main():
     else:
         # all hosts
         hostlist = servers_list
+
+    if args.reboot:
+        this_hosts_ip = get_ipmi_ip()
+
+        # if we're running on one of the servers we're looking at, most this server to the end of the list
+        # so that it would be rebooted last.
+        if this_hosts_ip is not None:
+            log.info(f"This host's IPMI IP is: {this_hosts_ip}")
+
+            my_entry = None
+            for host in hostlist:
+                if host.hostname == this_hosts_ip:
+                    my_entry = host
+                    break
+            if my_entry is not None:
+                hostlist.remove(my_entry)
+                hostlist.append(my_entry)
 
     # open connections to all the hosts - redfish_list is a list of RedFishBMC objects
     log.info("Opening sessions to hosts:")
