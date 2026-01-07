@@ -181,15 +181,9 @@ class RedFishBMC(object):
         return False
 
     def check_settings(self, settings):
-        log.info(f"Checking BIOS settings on {self.name}")
         if settings is None:
             log.info(f"{self.name} There are no settings for this platform in the bios settings configuration file")
             return 0
-
-        #if self.vendor == "Supermicro":
-        #    settings = self.adjust_supermicro_settings(settings)
-        #    if settings is None:
-        #        return 0
 
         count = 0
         for key, value in settings.items():

@@ -557,8 +557,7 @@ def main():
                 continue
             else:
                 settings = find_bios_settings(server, all_bios_settings)
-                # Vince left off here
-                #count = bmc.check_settings(desired_bios_settings[bmc.manufacturer][bmc.arch][bmc.model])
+                log.info(f"Looking at {server.hostname}: {server.bmc.manufacturer}/{server.bmc.arch}/{server.bmc.model}:")
                 count = server.bmc.check_settings(settings)
             #log.info(f"")
             if count > 0:
