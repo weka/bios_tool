@@ -5,7 +5,7 @@ import redfish
 
 from logging import getLogger
 
-from setuptools.command.build_ext import if_dl
+#from setuptools.command.build_ext import if_dl
 
 #from paramiko.util import log_to_file
 
