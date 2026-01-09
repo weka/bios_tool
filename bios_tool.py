@@ -341,7 +341,7 @@ def find_bios_settings(server, all_bios_settings, force=False):
     if server.arch in mfg:
         arch = mfg[server.arch]
     else:
-        log.error(f"Server {server.hostname}: Unknown processor architecture: {server.architecture}.  Aborting.")
+        log.error(f"Server {server.hostname}: Unknown processor architecture: {server.arch}.  Aborting.")
         return None
     if server.model in arch:
         base_settings = arch[server.model] # exact match
