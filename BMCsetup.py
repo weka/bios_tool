@@ -1,5 +1,6 @@
 # BMC setup.py - setup the BMC for the host; check for brand and ensure redfish and ipmi over lan are enabled
 import time
+import subprocess
 
 from wekapyutils.wekassh import RemoteServer
 
@@ -47,6 +48,24 @@ def lenovo_parse_return(string):
     line = string.splitlines()[0]
     trimmed = line[8:].strip()
     return trimmed
+
+
+def get_ipmi_ip(channel=1):
+    # run 'ipmitool lan print' and extract the ip address from the output and return it
+    try:
+        # Run 'ipmitool lan print'
+        result = subprocess.run(['sudo', 'ipmitool', 'lan', 'print', str(channel)],
+                                capture_output=True, text=True, check=True)
+        # Extract the IP address
+        for line in result.stdout.splitlines():
+            if ":" in line:
+                key, val = line.split(":", 1)
+                if key.strip() == "IP Address":
+                    return val.strip()
+    except Exception as e:
+        log.error(f"Failed to run ipmitool: {e}, {e.stderr}")
+        log.error("Are you not running as 'root' and don't have passwordless sudo?")
+    return None
 
 
 def bmc_setup(host, user, password):
