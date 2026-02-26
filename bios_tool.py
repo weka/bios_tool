@@ -337,19 +337,20 @@ def find_bios_settings(server, all_bios_settings, force=False):
         mfg = all_bios_settings[server.manufacturer]
     else:
         log.error(f"Server {server.hostname}: Unknown manufacturer: {server.manufacturer}.  Aborting.")
-        return None
     if server.arch in mfg:
         arch = mfg[server.arch]
     else:
         log.error(f"Server {server.hostname}: Unknown processor architecture: {server.arch}.  Aborting.")
-        return None
     if server.model in arch:
         base_settings = arch[server.model] # exact match
-    elif '*' in arch:
-        base_settings = arch['*']  # wildcard entry - give it a try
-        wild = True
+    else:
+        log.error(f"Server {server.hostname}: Unknown model: {server.manufacturer}/{server.model}.  Aborting.")
+    #elif '*' in arch:
+    #    base_settings = arch['*']  # wildcard entry - give it a try
+    #    wild = True
 
     if base_settings is None:
+        log.error("Please define this server model in the database and retry.")
         return None
 
     derived_keys = dict()
@@ -396,8 +397,9 @@ def find_bios_settings(server, all_bios_settings, force=False):
     #    print(f"We used a wildcard for {server.hostname}: '{server.model}'.")
 
     if len(base_settings.keys()) != len(derived_keys.keys()):
-        log.warning(f"{server.hostname}'s settings do not match defined settings for {server.manufacturer}/{server.model}.")
-        log.warning(f"This server's settings should be manually reviewed")
+        log.error(f"{server.hostname}'s settings do not match defined settings for {server.manufacturer}/{server.model}.")
+        log.error(f"This server's settings should be manually reviewed")
+        sys.exit(1)
 
     return this_servers_settings
 
@@ -444,7 +446,7 @@ def main():
     args = parser.parse_args()
 
     if args.version:
-        print(f"{progname} version 2026.01.06")
+        print(f"{progname} version 2026.02.26")
         sys.exit(0)
 
     # local modules - override a module's logging level
@@ -557,6 +559,8 @@ def main():
                 continue
             else:
                 settings = find_bios_settings(server, all_bios_settings)
+                if settings is None:
+                    sys.exit(1)    # just bail - error messages have already been issued.
                 log.info(f"Looking at {server.hostname}: {server.bmc.manufacturer}/{server.bmc.arch}/{server.bmc.model}:")
                 count = server.bmc.check_settings(settings)
             #log.info(f"")

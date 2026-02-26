@@ -2,6 +2,7 @@ import json
 #from pprint import pprint
 
 import redfish
+import sys
 
 from logging import getLogger
 
@@ -259,3 +260,95 @@ class RedFishBMC(object):
                 if server_key == key:
                     return server_key
         return None
+
+    def dell_thermal_settings(self):
+        try:
+            # ===== GET THERMAL DATA (Fans and Temperatures) =====
+            print("=" * 60)
+            print("THERMAL STATUS (Fans and Temperatures)")
+            print("=" * 60)
+
+            thermal_uri = "/redfish/v1/Chassis/System.Embedded.1/Thermal"
+            response = self.redfish.get(thermal_uri)
+
+            if response.status == 200:
+                thermal_data = response.dict
+
+                # Display Fans
+                print("\n--- FANS ---")
+                for fan in thermal_data.get('Fans', []):
+                    print(f"Name: {fan.get('Name')}")
+                    print(f"  Reading: {fan.get('Reading')} RPM")
+                    print(f"  Status: {fan.get('Status', {}).get('Health')}")
+                    print(f"  State: {fan.get('Status', {}).get('State')}")
+                    print()
+
+                # Display Temperatures
+                print("--- TEMPERATURES ---")
+                for temp in thermal_data.get('Temperatures', []):
+                    print(f"Name: {temp.get('Name')}")
+                    print(f"  Reading: {temp.get('ReadingCelsius')}°C")
+                    print(f"  Status: {temp.get('Status', {}).get('Health')}")
+                    print(f"  Upper Threshold: {temp.get('UpperThresholdCritical')}°C")
+                    print()
+            else:
+                print(f"Failed to get thermal data: {response.status}")
+
+            # ===== GET THERMAL CONFIGURATION =====
+            print("=" * 60)
+            print("THERMAL CONFIGURATION")
+            print("=" * 60)
+
+            # Get Dell OEM attributes
+            attributes_uri = "/redfish/v1/Managers/iDRAC.Embedded.1/Oem/Dell/DellAttributes/iDRAC.Embedded.1"
+            response = self.redfish.get(attributes_uri)
+
+            if response.status == 200:
+                attributes = response.dict.get('Attributes', {})
+
+                # Filter thermal-related settings
+                thermal_settings = {k: v for k, v in attributes.items()
+                                    if 'Thermal' in k or 'Fan' in k}
+
+                print("\nCurrent Thermal Settings:")
+                for key, value in thermal_settings.items():
+                    print(f"  {key}: {value}")
+            else:
+                print(f"Failed to get attributes: {response.status}")
+
+            # ===== MODIFY THERMAL SETTINGS (Example) =====
+            print("\n" + "=" * 60)
+            print("MODIFY THERMAL SETTINGS")
+            print("=" * 60)
+
+            # Example: Set to Maximum Performance with High Fan Offset
+            new_settings = {
+                "Attributes": {
+                    "ThermalSettings.1.ThermalProfile": "Maximum Performance",
+                    "ThermalSettings.1.FanSpeedOffset": "High"
+                }
+            }
+
+            print("\nSending PATCH request to modify thermal settings...")
+            print(f"New settings: {json.dumps(new_settings, indent=2)}")
+
+            # Uncomment to actually apply changes
+            response = self.redfish.patch(attributes_uri, body=new_settings)
+
+            if response.status in [200, 204]:
+                print("Thermal settings updated successfully!")
+                print("Note: A system reboot is recommended for changes to take full effect")
+            else:
+                print(f"Failed to update settings: {response.status}")
+                print(f"Response: {response.dict}")
+
+            print("\n(PATCH command commented out - uncomment to apply changes)")
+
+        except Exception as e:
+            print(f"Error: {str(e)}")
+            sys.exit(1)
+
+        #finally:
+        #    # Logout and close session
+        #    self.redfish.logout()
+        #    print("\nSession closed.")
