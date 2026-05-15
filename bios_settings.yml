@@ -147,7 +147,6 @@ HPE:
       PerformanceDeterminism: PerformanceDeterministic
       PowerRegulator: StaticHighPerf
       ProcSMT: Disabled
-      ProcAmdIoVt: Disabled
       BootMode: Uefi
       SecureBootStatus: Disabled
     '*':
@@ -166,10 +165,8 @@ HPE:
       PerformanceDeterminism: PerformanceDeterministic
       PowerRegulator: StaticHighPerf
       ProcSMT: Disabled
-      ProcAmdIoVt: Disabled
       BootMode: Uefi
       SecureBootStatus: Disabled
-
   Intel:
     '*':
       IntelProcVtd: Disabled
@@ -178,6 +175,18 @@ HPE:
       ProcHyperthreading: Enabled
 Supermicro:
   AMD:
+    ASG-1115S-NE316R:
+      WorkloadProfile: I/O
+      CorePerformanceBoost: Auto
+      SecureBootEnable: false
+      SMTControl: Disabled
+      SR_IOVSupport: Enabled
+      IOMMU: Enabled
+      GlobalC_stateControl: Disabled
+      DFCstates: Disabled
+      NUMANodesPerSocket: Auto
+      ACPISRATL3CacheAsNUMADomain: Disabled
+      DeterminismControl: Manual
     AS -1115CS-TNR:
       ACPISRATL3CacheAsNUMADomain_0099: Disabled
       DFCstates_7103: Disabled
