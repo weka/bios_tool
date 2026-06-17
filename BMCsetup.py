@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 # BMC setup.py - setup the BMC for the host; check for brand and ensure redfish and ipmi over lan are enabled
 import time
 import subprocess

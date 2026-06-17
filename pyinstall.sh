@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # this file uses pyinstaller to create the binary tarball that is used to deploy the tool binary
 # this allows the tool binary to be deployed without installing python and other required python packages
 #
