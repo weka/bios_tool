@@ -90,7 +90,21 @@ class RedFishBMC(object):
         self.proc_members_uri = next(iter(self.proc_data.dict['Members']))['@odata.id']
         self.proc_members_response = self.redfish.get(self.proc_members_uri)  # ie: /redfish/v1/Processors/1
         # note the architecture
-        self.arch = "AMD" if self.proc_members_response.dict.get("Model", None)[0] == 'A' else "Intel"
+        self.proc_arch = self.proc_members_response.dict.get("ProcessorArchitecture")
+        if self.proc_arch == "x86":
+            self.proc_mfr = self.proc_members_response.dict.get("ProcessorId").get("VendorId")
+            if self.proc_mfr == "AuthenticAMD":
+                self.arch = "AMD"
+            elif self.proc_mfr == "GenuineIntel":
+                self.arch = "Intel"
+            else:
+                self.arch = "Unknown"
+        else:
+            self.proc_isa = self.proc_members_response.dict.get("ProcessorArchitecture")
+            if self.proc_isa == "ARM":
+                self.arch = "ARM"
+            else:
+                self.arch = "Unknown"
 
         # fetch the actual BIOS settings
         self.bios_uri = self.systems_members_response.dict['Bios']['@odata.id']
