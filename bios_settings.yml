@@ -214,6 +214,10 @@ Supermicro:
       SR-IOVSupport: Enabled
       SpeedStep(P-States): Disabled
       Intel\u00aeVTforDirectedI/O(VT-d): Disabled
+  ARM:
+    '*':
+      SecureBootEnable: false
+      SR_IOVSupport: Enabled
 Lenovo:
   AMD:
     ThinkSystem SR635 V3:

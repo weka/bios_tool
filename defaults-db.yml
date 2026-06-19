@@ -1936,6 +1936,99 @@ Supermicro:
       WatchDogFunction_0059: Disabled
       WhenLogisFull_0004: Do Nothing
       XHCIHand_off_013F: Disabled
+  ARM:
+    ARS-121L-DNR:
+      ARIForwarding: Disabled
+      ASPMSupport: Disabled
+      Above4GDecoding: Enabled
+      AdministratorPassword: null
+      AtomicOpEgressBlocking: Disabled
+      AtomicOpRequesterEnable: Disabled
+      BootDescription: null
+      BootURI: null
+      BusMasterEnable: Disabled
+      ClientPassword: null
+      ClientUserName: null
+      ClockPowerManagement: Disabled
+      ComplianceSOS: Disabled
+      ConsoleRedirectionEMS: true
+      DeleteAllHTTPSBootTLSCertificate: Do Nothing
+      DeleteoneHTTPSBootTLSCertificate: null
+      Devicepower_updelay: Auto
+      Deviceresettime_out: 20 sec
+      End_EndTLPPrefixBlocking: Disabled
+      EnrollHTTPSBootTLSCertificate: null
+      ExtendedSynch: Disabled
+      ExtendedTag: Disabled
+      HTTPBootPolicy: Apply to each LAN
+      HTTPSBootChecksHostname: Enabled
+      HardwareAutonomousSpeed: Enabled
+      HardwareAutonomousWidth: Enabled
+      IDOCompletionEnable: Disabled
+      IDORequestEnable: Disabled
+      IPv4HTTPSupport: Disabled
+      IPv4PXESupport: Enabled
+      IPv6HTTPSupport: Disabled
+      IPv6PXESupport: Disabled
+      InstanceofPriority1_: 1
+      InstanceofPriority2_: 0
+      KMSSecurityPolicy: Disabled
+      KMSServerRetryCount: 5
+      KMSTimeOut: 5
+      LTRMechanismEnable: Disabled
+      LinkTrainingRetry: '5'
+      LinkTrainingTimeout_uS_: 1000
+      LoadAuthentication_Key: Disabled
+      MaximumPayload: Auto
+      MaximumReadRequest: Auto
+      MediaDetectCount: 1
+      NetworkStack: Enabled
+      NoSnoop: Enabled
+      PCILatencyTimer: 32 PCI Bus Clocks
+      PCI_XLatencyTimer: 64 PCI Bus Clocks
+      PERR_Generation: Disabled
+      PXEBootWaitTime: 0
+      PasswordCheck: Setup
+      PrivateKeyPassword: null
+      QuietBoot: true
+      RelaxedOrdering: Enabled
+      ResetKeys: Disabled
+      SERR_Generation: Disabled
+      SR_IOVSupport: Disabled
+      SecondSupermicroKMSServerIPaddress: null
+      SecureBootEnable: false
+      SecureBootMode: Custom
+      SecurityDeviceSupport: Disabled
+      SelectIPv4orIPv6: IPv4
+      Super_GuardiansProtectionPolicy: Storage
+      SupermicroKMSServerIPaddress: null
+      SupermicroKMSTCPPortnumber: 5696
+      TPMSecurityPolicy: Disabled
+      TargetLinkSpeed: Auto
+      TimeZone: 0
+      UEFIApplicationBootOption_1: 'UEFI: Built-in EFI Shell'
+      UEFIBootOption_1: Hard Disk:RedHat Boot Manager (Micron_7450_MTFDKBG960TFR)
+      UEFIBootOption_2: CD/DVD
+      UEFIBootOption_3: USB Hard Disk
+      UEFIBootOption_4: USB CD/DVD
+      UEFIBootOption_5: USB Key
+      UEFIBootOption_6: USB Floppy
+      UEFIBootOption_7: USB Lan
+      UEFIBootOption_8: Network:(S18/B1/D0/F0) UEFI PXE IPv4 Mellanox Network Adapter
+        - 01:23:45:67:89:AB - 0123456789AB
+      UEFIBootOption_9: 'UEFI AP:UEFI: Built-in EFI Shell'
+      UEFIHardDiskBootOption_1: RedHat Boot Manager (Micron_7450_MTFDKBG960TFR)
+      UEFINETWORKBootOption_1: (S18/B1/D0/F0) UEFI PXE IPv4 Mellanox Network Adapter
+        - 01:23:45:67:89:AB - 0123456789AB
+      UEFINETWORKBootOption_2: (S18/B1/D0/F1) UEFI PXE IPv4 Mellanox Network Adapter
+        - 01:23:45:67:89:AC - 0123456789AC
+      USBMassStorageDriverSupport: Enabled
+      USBSecurityPolicy: Disabled
+      USBtransfertime_out: 20 sec
+      UnpopulatedLinks: Keep Link ON
+      VGAPaletteSnoop: Disabled
+      WatchDogFunction: Disabled
+      XHCIHand_off: Enabled
 WEKA:
   AMD:
     WEKApod - R6615:
