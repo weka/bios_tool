@@ -429,7 +429,7 @@ def main():
                         help="Reboot the servers with BIOS changes waiting to be applied (those --fix changed now or "
                              "earlier), after asking")
     parser.add_argument("-y", "--yes", dest="yes", default=False, action="store_true",
-                        help="Answer yes to the question before rebooting, so it can run without a terminal")
+                        help="Answer yes to the question before rebooting or resetting, so it can run without a terminal")
     parser.add_argument("--dump", dest="dump", default=False, action="store_true",
                         help="Print out current BIOS settings only")
     parser.add_argument("--save-defaults", dest="save", default=False, action="store_true",
@@ -439,7 +439,7 @@ def main():
     parser.add_argument("-f", "--force", dest="force", default=False, action="store_true",
                         help="Force overwriting existing BIOS settings and such")
     parser.add_argument("--reset-bios", dest="reset_bios", default=False, action="store_true",
-                        help="Reset BIOS to default settings.  To also reboot, add the --reboot option")
+                        help="Reset the BIOS to factory defaults, after asking. To also reboot, add the --reboot option")
     parser.add_argument("--diff", dest="diff", nargs=2, default=False, help="Compare 2 hosts BIOS settings")
     parser.add_argument("--diff-defaults", dest="diff_defaults", default=False, action="store_true",
                         help="Compare hosts BIOS settings to factory defaults")
@@ -548,13 +548,24 @@ def main():
         diff_defaults(args.defaults_database, redfish_list)
         pass
     elif args.reset_bios:
-        for server in redfish_list:
-            # rest the bios...
-            server.bmc.reset_settings_to_default()
-            log.info(f"{server.bmc.name} has been reset to factory defaults")
+        then = " and reboot them" if args.reboot else ""
+        answer = confirm(f"Reset the BIOS of {len(redfish_list)} servers to factory defaults{then}: "
+                         f"{', '.join(server.hostname for server in redfish_list)}?", args.yes)
+        failed = answer is None
+        for server in redfish_list if answer else []:
+            if not server.bmc.reset_settings_to_default():
+                failed = True
+                continue
+            log.info(f"{server.hostname}'s BIOS will be reset to factory defaults at its next reboot")
             if args.reboot:
-                server.bmc.reboot()
-                log.info(f"{server.bmc.name} has been rebooted")
+                if server.bmc.reboot():
+                    log.info(f"{server.hostname} has been rebooted")
+                else:
+                    log.error(f"Unable to reboot {server.hostname}")
+                    failed = True
+        if failed:
+            close_sessions(redfish_list)
+            sys.exit(1)
     elif args.save:
         save_bmc_db(redfish_list, args.defaults_database, force=args.force)
     else:
