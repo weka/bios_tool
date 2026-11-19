@@ -3,7 +3,6 @@
 #
 # THIS FILE IS FOR REFERENCE ONLY.  THESE SETTINGS ARE NOT SET BY BIOS_TOOL.
 # Please see bios_settings.yml for the BIOS settings that are applied by BIOS_TOOL.
-
 Dell Inc.:
   AMD:
     PowerEdge R6615:
@@ -13,7 +12,6 @@ Dell Inc.:
       AesNi: Enabled
       AgesaVersion: GenoaPI-SP5 1.0.0.B
       ApbDis: Disabled
-      AssetTag: ''
       AuthorizeDeviceFirmware: Disabled
       BiosNvmeDriver: DellQualifiedDrives
       BoostFMax: BoostFMaxAuto
@@ -194,8 +192,6 @@ Dell Inc.:
       NumberOfPxeDevices: '4'
       NvmeMode: NonRaid
       NvmeofEnDis: Disabled
-      NvmeofHostId: 4C4C4544-0048-4A10-8059-B6C04F445A33
-      NvmeofHostNqn: nqn.1988-11.com.dell:PowerEdge.R6615.6HJYDZ3
       NvmeofHostSecurityPath: ''
       NvmeofSubsys1Address: ''
       NvmeofSubsys1Auth: None
@@ -398,10 +394,6 @@ Dell Inc.:
       RedundantOsLocation: None
       RedundantOsState: Visible
       Rmp: Disabled
-      SHA256SetupPassword: ''
-      SHA256SetupPasswordSalt: ''
-      SHA256SystemPassword: ''
-      SHA256SystemPasswordSalt: ''
       SecureBoot: Disabled
       SecureBootMode: DeployedMode
       SecureBootPolicy: Standard
@@ -444,7 +436,6 @@ Dell Inc.:
       SetLegacyHddOrderFqdd7: ''
       SetLegacyHddOrderFqdd8: ''
       SetLegacyHddOrderFqdd9: ''
-      SetupPassword: null
       Slot1: Enabled
       Slot1Bif: x16
       Slot2: Enabled
@@ -460,14 +451,12 @@ Dell Inc.:
       SysMemSpeed: 4800 MT/s
       SysMemType: ECC DDR5
       SysMfrContactInfo: www.dell.com
-      SysPassword: null
       SysPrepClean: None
       SysProfile: PerfOptimized
       SystemBiosVersion: 1.7.2
       SystemCpldVersion: 1.4.0
       SystemManufacturer: Dell Inc.
       SystemModelName: PowerEdge R6615
-      SystemServiceTag: 6HJYDZ3
       TimeZone: LOCAL
       Tpm2Algorithm: SHA256
       Tpm2Hierarchy: Enabled
@@ -489,7 +478,6 @@ Dell Inc.:
     PowerEdge R670:
       AcpiFpdt: Disabled
       AesNi: Enabled
-      AssetTag: ''
       AuthorizeDeviceFirmware: Disabled
       AvxIccpPreGrantLicense: Disabled
       BiosNvmeDriver: AllDrives
@@ -695,8 +683,6 @@ Dell Inc.:
       NumberOfPxeDevices: '4'
       NvmeMode: NonRaid
       NvmeofEnDis: Disabled
-      NvmeofHostDellNqn: nqn.1988-11.com.dell:PowerEdge.R670.8G14XB4
-      NvmeofHostId: 4C4C4544-0047-3110-8034-B8C04F584234
       NvmeofHostSecurityPath: ''
       NvmeofSubsys1Address: ''
       NvmeofSubsys1Auth: None
@@ -911,10 +897,6 @@ Dell Inc.:
       RedundantOsBoot: Disabled
       RedundantOsLocation: None
       RedundantOsState: Visible
-      SHA256SetupPassword: ''
-      SHA256SetupPasswordSalt: ''
-      SHA256SystemPassword: ''
-      SHA256SystemPasswordSalt: ''
       SecureBoot: Disabled
       SecureBootMode: DeployedMode
       SecureBootPolicy: Standard
@@ -940,7 +922,6 @@ Dell Inc.:
       SetBootOrderFqdd7: ''
       SetBootOrderFqdd8: ''
       SetBootOrderFqdd9: ''
-      SetupPassword: null
       Slot1: Enabled
       Slot1Bif: x16
       Slot2: Enabled
@@ -959,7 +940,6 @@ Dell Inc.:
       SysMemSpeed: 5600 MT/s
       SysMemType: ECC DDR5
       SysMfrContactInfo: www.dell.com
-      SysPassword: null
       SysPrepClean: None
       SysProfile: PerfPerWattOptimizedDapc
       SystemBiosVersion: 1.3.2
@@ -967,7 +947,6 @@ Dell Inc.:
       SystemFpgaVersion: 1.2.0
       SystemManufacturer: Dell Inc.
       SystemModelName: PowerEdge R670
-      SystemServiceTag: 8G14XB4
       TimeZone: LOCAL
       Tpm2Algorithm: SHA256
       Tpm2Hierarchy: Enabled
@@ -1176,8 +1155,6 @@ HPE:
       SerialConsoleBaudRate: BaudRate115200
       SerialConsoleEmulation: Vt100Plus
       SerialConsolePort: Auto
-      SerialNumber: MXQ2050L99
-      ServerAssetTag: ''
       ServerConfigLockStatus: Disabled
       ServerName: ''
       ServerOtherInfo: ''
@@ -1393,8 +1370,6 @@ HPE:
       SerialConsoleBaudRate: BaudRate115200
       SerialConsoleEmulation: Vt100Plus
       SerialConsolePort: Auto
-      SerialNumber: CZ2D2P04K7
-      ServerAssetTag: ''
       ServerConfigLockStatus: Disabled
       ServerName: ''
       ServerOtherInfo: ''
@@ -1545,55 +1520,6 @@ Lenovo:
       M2NVMe2_BayRAIDKit__M2_Name: New_VD
       M2NVMe2_BayRAIDKit__M2_RAIDLevel: RAID1
       M2NVMe2_BayRAIDKit__M2_StripeSize: StripeSize_128K
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_Advancedpowersettings: Enabled
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_BannerMessageTimeout: 4
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_BlinkLEDs: 0
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_BootLUN: 0
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_BootLegacyInterruptDisable: Disabled
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_BootRetryCount: NoRetry
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_BootStrapType: Int19h
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_BoottoTarget: Enabled
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_CHAPAuthentication: Disabled
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_CHAPID: ''
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_CHAPMutualAuthentication: Disabled
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_CHAPSecret: ''
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_ChipType: ConnectX-6
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_Connect: Disabled
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_DHCPClient_IdHWTypeIB: Disabled
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_DHCPHWTypeIB: Disabled
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_DefaultGateway: 0.0.0.0
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_DeviceName: Mellanox Network Adapter
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_EFIVersion: 14.37.13
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_FamilyFirmwareVersion: 20.43.25.66
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_IPAddress: 0.0.0.0
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_IPVersion: IPv4
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_IPv4IPv6support: IPv4
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_IPv6Address: 0:0:0:0:0:0:0:0
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_IPv6DefaultGateway: 0:0:0:0:0:0:0:0
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_IPv6PrefixLength: '128'
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_IPv6PrimaryDNS: 0:0:0:0:0:0:0:0
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_LegacyBootProtocol: PXE
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_LinkSpeed: NA
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_LinkStatus: Disconnected
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_MACAddress: B8:3F:D2:32:B9:2C
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_NetworkLinkType: InfiniBand
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_PCIAddress: '81:00:00'
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_PCIDeviceID: 101B
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_PCIVirtualFunctionsAdvertised: 0
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_PKey: 0
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_PrimaryDNS: 0.0.0.0
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_PxeBootFilters: Enabled
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_Slotpowerlimiter: Disabled
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_SocketDirectOperation: Disabled
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_SubnetMask: 0.0.0.0
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_TCPIPParametersviaDHCP: Enabled
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_TCPPort: 3260
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_VirtualLANID: 1
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_VirtualLANMode: Disabled
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_VirtualMACAddress: 00:00:00:00:00:00
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_VirtualizationMode: None
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_iSCSIName: ''
-      MellanoxNetworkAdapter_B83FD232B92C__Slot1_iSCSIParametersviaDHCP: Enabled
       MellanoxNetworkAdapter__Slot6PhysicalPort1LogicalPort1_BannerMessageTimeout: 4
       MellanoxNetworkAdapter__Slot6PhysicalPort1LogicalPort1_BlinkLEDs: 0
       MellanoxNetworkAdapter__Slot6PhysicalPort1LogicalPort1_BootRetryCount: NoRetry
@@ -1608,7 +1534,6 @@ Lenovo:
       MellanoxNetworkAdapter__Slot6PhysicalPort1LogicalPort1_LegacyBootProtocol: PXE
       MellanoxNetworkAdapter__Slot6PhysicalPort1LogicalPort1_LinkSpeed: LinkSpeed_1000Mbps
       MellanoxNetworkAdapter__Slot6PhysicalPort1LogicalPort1_LinkStatus: Connected
-      MellanoxNetworkAdapter__Slot6PhysicalPort1LogicalPort1_MACAddress: A0:88:C2:C6:92:A4
       MellanoxNetworkAdapter__Slot6PhysicalPort1LogicalPort1_PCIAddress: '41:00:00'
       MellanoxNetworkAdapter__Slot6PhysicalPort1LogicalPort1_PCIDeviceID: 101F
       MellanoxNetworkAdapter__Slot6PhysicalPort1LogicalPort1_PCIVirtualFunctionsAdvertised: 8
@@ -1618,7 +1543,6 @@ Lenovo:
       MellanoxNetworkAdapter__Slot6PhysicalPort1LogicalPort1_VMwareDistributedServicesEngineDPU: Disabled
       MellanoxNetworkAdapter__Slot6PhysicalPort1LogicalPort1_VirtualLANID: 1
       MellanoxNetworkAdapter__Slot6PhysicalPort1LogicalPort1_VirtualLANMode: Disabled
-      MellanoxNetworkAdapter__Slot6PhysicalPort1LogicalPort1_VirtualMACAddress: 00:00:00:00:00:00
       MellanoxNetworkAdapter__Slot6PhysicalPort1LogicalPort1_VirtualizationMode: SR_IOV
       MellanoxNetworkAdapter__Slot6PhysicalPort1LogicalPort1_WakeOnLAN: Enabled
       MellanoxNetworkAdapter__Slot6PhysicalPort1LogicalPort1_WakeOnLANLinkSpeed: WakeOnLANLinkSpeed_1Gbps
@@ -1636,7 +1560,6 @@ Lenovo:
       MellanoxNetworkAdapter__Slot6PhysicalPort2LogicalPort1_LegacyBootProtocol: PXE
       MellanoxNetworkAdapter__Slot6PhysicalPort2LogicalPort1_LinkSpeed: NA
       MellanoxNetworkAdapter__Slot6PhysicalPort2LogicalPort1_LinkStatus: Disconnected
-      MellanoxNetworkAdapter__Slot6PhysicalPort2LogicalPort1_MACAddress: A0:88:C2:C6:92:A5
       MellanoxNetworkAdapter__Slot6PhysicalPort2LogicalPort1_PCIAddress: '41:00:01'
       MellanoxNetworkAdapter__Slot6PhysicalPort2LogicalPort1_PCIDeviceID: 101F
       MellanoxNetworkAdapter__Slot6PhysicalPort2LogicalPort1_PCIVirtualFunctionsAdvertised: 8
@@ -1645,7 +1568,6 @@ Lenovo:
       MellanoxNetworkAdapter__Slot6PhysicalPort2LogicalPort1_VMwareDistributedServicesEngineDPU: Disabled
       MellanoxNetworkAdapter__Slot6PhysicalPort2LogicalPort1_VirtualLANID: 1
       MellanoxNetworkAdapter__Slot6PhysicalPort2LogicalPort1_VirtualLANMode: Disabled
-      MellanoxNetworkAdapter__Slot6PhysicalPort2LogicalPort1_VirtualMACAddress: 00:00:00:00:00:00
       MellanoxNetworkAdapter__Slot6PhysicalPort2LogicalPort1_VirtualizationMode: SR_IOV
       Memory_1TBremap: AttemptToRemap
       Memory_DDRHealingBIST: Disabled
@@ -1670,54 +1592,6 @@ Lenovo:
       NetworkStackSettings_Mediadetectcount: 1
       NetworkStackSettings_NetworkStack: Enabled
       NetworkStackSettings_PXEbootwaittime: 0
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_BannerMessageTimeout: 4
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_BlinkLEDs: 0
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_BootLUN: 0
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_BootLegacyInterruptDisable: Disabled
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_BootRetryCount: NoRetry
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_BootStrapType: Int19h
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_BoottoTarget: Enabled
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_CHAPAuthentication: Disabled
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_CHAPID: ''
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_CHAPMutualAuthentication: Disabled
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_CHAPSecret: ''
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_ChipType: ConnectX-7
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_Connect: Disabled
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_DHCPClient_IdHWTypeIB: Disabled
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_DHCPHWTypeIB: Disabled
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_DefaultGateway: 0.0.0.0
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_DeviceName: Nvidia Network Adapter
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_EFIVersion: 14.37.13
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_FamilyFirmwareVersion: 28.43.2566
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_IPAddress: 0.0.0.0
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_IPVersion: IPv4
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_IPv4IPv6support: IPv4
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_IPv6Address: 0:0:0:0:0:0:0:0
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_IPv6DefaultGateway: 0:0:0:0:0:0:0:0
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_IPv6PrefixLength: '128'
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_IPv6PrimaryDNS: 0:0:0:0:0:0:0:0
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_LegacyBootProtocol: PXE
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_LinkSpeed: NA
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_LinkStatus: Disconnected
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_MACAddress: A0:88:C2:CA:98:A0
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_NetworkLinkType: InfiniBand
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_PCIAddress: C1:00:00
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_PCIDeviceID: '1021'
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_PCIVirtualFunctionsAdvertised: 16
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_PKey: 0
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_PrimaryDNS: 0.0.0.0
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_PxeBootFilters: Enabled
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_RTPPSENABLEDONPOWERUP: Disabled
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_SocketDirectOperation: Disabled
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_SubnetMask: 0.0.0.0
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_TCPIPParametersviaDHCP: Enabled
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_TCPPort: 3260
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_VirtualLANID: 1
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_VirtualLANMode: Disabled
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_VirtualMACAddress: 00:00:00:00:00:00
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_VirtualizationMode: SR_IOV
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_iSCSIName: ''
-      NvidiaNetworkAdapter_A088C2CA98A0__Slot3_iSCSIParametersviaDHCP: Enabled
       OperatingModes_ChooseOperatingMode: MaximumEfficiency
       POSTAttempts_POSTAttemptsLimit: POSTAttemptsLimit_3
       Power_ACPIFixedPowerButton: Enabled
@@ -1946,7 +1820,6 @@ WEKA:
       AesNi: Enabled
       AgesaVersion: GenoaPI-SP5 1.0.0.E
       ApbDis: Disabled
-      AssetTag: ''
       AuthorizeDeviceFirmware: Disabled
       BiosNvmeDriver: DellQualifiedDrives
       BoostFMax: BoostFMaxAuto
@@ -2132,8 +2005,6 @@ WEKA:
       NumberOfPxeDevices: '4'
       NvmeMode: NonRaid
       NvmeofEnDis: Disabled
-      NvmeofHostCustomNqn: ''
-      NvmeofHostId: 4C4C4544-0048-4810-8044-B2C04F363634
       NvmeofHostSecurityPath: ''
       NvmeofSubsys1Address: ''
       NvmeofSubsys1Auth: None
@@ -2337,10 +2208,6 @@ WEKA:
       RedundantOsLocation: None
       RedundantOsState: Visible
       Rmp: Disabled
-      SHA256SetupPassword: ''
-      SHA256SetupPasswordSalt: ''
-      SHA256SystemPassword: ''
-      SHA256SystemPasswordSalt: ''
       SecureBoot: Disabled
       SecureBootMode: DeployedMode
       SecureBootPolicy: Standard
@@ -2383,7 +2250,6 @@ WEKA:
       SetLegacyHddOrderFqdd7: ''
       SetLegacyHddOrderFqdd8: ''
       SetLegacyHddOrderFqdd9: ''
-      SetupPassword: null
       Slot1: Enabled
       Slot1Bif: x16
       Slot2: Enabled
@@ -2399,14 +2265,12 @@ WEKA:
       SysMemSpeed: 4800 MT/s
       SysMemType: ECC DDR5
       SysMfrContactInfo: https://support.weka.io
-      SysPassword: null
       SysPrepClean: None
       SysProfile: Custom
       SystemBiosVersion: 1.11.2
       SystemCpldVersion: 1.6.3
       SystemManufacturer: WEKA
       SystemModelName: WEKApod - R6615
-      SystemServiceTag: 2HHD664
       TimeZone: LOCAL
       Tpm2Algorithm: SHA256
       Tpm2Hierarchy: Enabled
@@ -2428,7 +2292,6 @@ WEKA:
     WEKApod 2100C:
       AcpiFpdt: Disabled
       AesNi: Enabled
-      AssetTag: ''
       AuthorizeDeviceFirmware: Disabled
       AvxIccpPreGrantLicense: Disabled
       BiosNvmeDriver: AllDrives
@@ -2634,8 +2497,6 @@ WEKA:
       NumberOfPxeDevices: '4'
       NvmeMode: NonRaid
       NvmeofEnDis: Disabled
-      NvmeofHostDellNqn: nqn.1988-11.com.dell:PowerEdge.R670.8G14XB4
-      NvmeofHostId: 4C4C4544-0047-3110-8034-B8C04F584234
       NvmeofHostSecurityPath: ''
       NvmeofSubsys1Address: ''
       NvmeofSubsys1Auth: None
@@ -2850,10 +2711,6 @@ WEKA:
       RedundantOsBoot: Disabled
       RedundantOsLocation: None
       RedundantOsState: Visible
-      SHA256SetupPassword: ''
-      SHA256SetupPasswordSalt: ''
-      SHA256SystemPassword: ''
-      SHA256SystemPasswordSalt: ''
       SecureBoot: Disabled
       SecureBootMode: DeployedMode
       SecureBootPolicy: Standard
@@ -2879,7 +2736,6 @@ WEKA:
       SetBootOrderFqdd7: ''
       SetBootOrderFqdd8: ''
       SetBootOrderFqdd9: ''
-      SetupPassword: null
       Slot1: Enabled
       Slot1Bif: x16
       Slot2: Enabled
@@ -2898,7 +2754,6 @@ WEKA:
       SysMemSpeed: 5600 MT/s
       SysMemType: ECC DDR5
       SysMfrContactInfo: www.dell.com
-      SysPassword: null
       SysPrepClean: None
       SysProfile: PerfPerWattOptimizedDapc
       SystemBiosVersion: 1.3.2
@@ -2906,7 +2761,6 @@ WEKA:
       SystemFpgaVersion: 1.2.0
       SystemManufacturer: Dell Inc.
       SystemModelName: PowerEdge R670
-      SystemServiceTag: 8G14XB4
       TimeZone: LOCAL
       Tpm2Algorithm: SHA256
       Tpm2Hierarchy: Enabled

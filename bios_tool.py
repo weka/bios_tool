@@ -1,5 +1,8 @@
 import argparse
 import difflib
+import getpass
+import os
+import re
 import logging
 import sys
 import redfish
@@ -129,7 +132,38 @@ def load_hosts(path):
 
 
 def generate_config(bmc_ips, bmc_username, bmc_password):
-    return [{'name': ip, 'user': bmc_username[0], 'password': bmc_password[0]} for ip in bmc_ips]
+    return [{'name': ip, 'user': bmc_username, 'password': bmc_password} for ip in bmc_ips]
+
+
+PASSWORD_ENV = "BIOS_TOOL_BMC_PASSWORD"
+
+
+def bmc_password(given):
+    """The password for --bmc-ips: --bmc-password, else $BIOS_TOOL_BMC_PASSWORD, else asked for at a terminal."""
+    if given is not None:
+        return given[0]
+    if os.environ.get(PASSWORD_ENV):
+        return os.environ[PASSWORD_ENV]
+    if sys.stdin.isatty():
+        return getpass.getpass("BMC password: ")
+    return None
+
+
+# BIOS settings that identify one machine, or hold its passwords: never copied into the defaults database or the
+# settings bios_tool suggests. Settings whose value is a MAC address, or whose name holds one (Lenovo names per-adapter
+# settings after the adapter's MAC), are left out too.
+IDENTIFYING_SETTINGS = {"SystemServiceTag", "SerialNumber", "AssetTag", "ServerAssetTag", "SetupPassword",
+                        "SysPassword", "SHA256SetupPassword", "SHA256SetupPasswordSalt", "SHA256SystemPassword",
+                        "SHA256SystemPasswordSalt", "NvmeofHostId", "NvmeofHostNqn", "NvmeofHostDellNqn",
+                        "NvmeofHostCustomNqn"}
+MAC_ADDRESS = re.compile(r"([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}")
+MAC_IN_NAME = re.compile(r"(^|_)[0-9A-Fa-f]{12}(_|$)")
+
+
+def shareable(settings):
+    """settings without those that identify the machine they came from."""
+    return {key: value for key, value in settings.items()
+            if key not in IDENTIFYING_SETTINGS and not MAC_ADDRESS.search(str(value)) and not MAC_IN_NAME.search(key)}
 
 def save_bmc_db(redfish_list, defaults_database, force=False):
     bmc_db = None
@@ -160,12 +194,12 @@ def save_bmc_db(redfish_list, defaults_database, force=False):
         if model in bmc_db[manufacturer][architecture]:
             if force:
                 log.warning(f"{manufacturer}/{architecture}/{model} found in database, forcing overwrite")
-                bmc_db[manufacturer][architecture][model] = server.bios_settings
+                bmc_db[manufacturer][architecture][model] = shareable(server.bios_settings)
                 changes_made = True
             else:
                 log.info(f"{manufacturer}/{architecture}/{model} found in database; to force overwrite use --force")
         else:
-            bmc_db[manufacturer][architecture][model] = server.bios_settings
+            bmc_db[manufacturer][architecture][model] = shareable(server.bios_settings)
             changes_made = True
 
     if changes_made:
@@ -195,7 +229,7 @@ def diff_defaults(defaults_database, redfish_list):
         manufacturer = server.bmc.manufacturer
         model = server.bmc.model
         arch = server.bmc.arch
-        bios_settings = server.bmc.bios_data.dict['Attributes']  # bios settings on the target server
+        bios_settings = shareable(server.bmc.bios_data.dict['Attributes'])  # bios settings on the target server
 
         if manufacturer not in bmc_db:
             log.error(f"There are no default settings for {manufacturer}")
@@ -575,7 +609,8 @@ def main():
     parser.add_argument("--bmc-username", dest="bmc_username", type=str, nargs=1,
                         help="a username to use on all hosts in --bmc_ips", default=None)
     parser.add_argument("--bmc-password", dest="bmc_password", type=str, nargs=1,
-                        help="a password to use on all hosts in --bmc_ips", default=None)
+                        help="a password to use on all hosts in --bmc-ips; visible to other users in ps and in "
+                             "shell history, so prefer $BIOS_TOOL_BMC_PASSWORD or the prompt", default=None)
     parser.add_argument("-v", "--verbose", dest='verbosity', action='store_true', help="enable verbose mode")
 
     args = parser.parse_args()
@@ -596,11 +631,12 @@ def main():
 
     # if they provided a list of BMC IPs, they must also provide a username and password
     if args.bmc_ips is not None:
-        if args.bmc_username is None or args.bmc_password is None:
-            log.error("You must provide a username and password when using --bmc-ips")
+        password = bmc_password(args.bmc_password)
+        if args.bmc_username is None or not password:
+            log.error(f"--bmc-ips needs --bmc-username, and a password: ${PASSWORD_ENV}, or typed when asked")
             sys.exit(1)
         log.info(f"Using BMC IPs - ignoring {args.hostconfigfile}")
-        hosts = generate_config(args.bmc_ips, args.bmc_username, args.bmc_password)
+        hosts = generate_config(args.bmc_ips, args.bmc_username[0], password)
     else:
         try:
             hosts = load_hosts(args.hostconfigfile)

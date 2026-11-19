@@ -148,26 +148,3 @@ def bmc_setup(host, user, password):
         return False
     ssh_sess.run("exit")
     return True
-
-
-
-if __name__ == '__main__':
-    bmc_setup('172.29.3.1', 'Administrator', 'Administrator') # hpe
-    bmc_setup('172.29.3.164', 'ADMIN', '_PASSWORD_1!') # lenovo
-    #bmc_setup('172.29.3.66', 'USERID', 'Passw0rd!!')
-    #bmc_setup('172.29.3.67', 'USERID', 'Passw0rd!!')
-    #bmc_setup('172.29.3.68', 'USERID', 'Passw0rd!!')
-    #bmc_setup('172.29.3.69', 'USERID', 'Passw0rd!!')
-    #bmc_setup('172.29.3.70', 'USERID', 'Passw0rd!!')
-
-    bmc_setup('172.29.1.74', 'root', 'Administrator') # dell
-    #dell_bmc_setup('172.29.3.120', 'root', 'WekaService')
-    # dell_bmc_setup('172.29.3.121', 'root', 'Administrator')
-    # dell_bmc_setup('172.29.3.122', 'root', 'Administrator')
-    # dell_bmc_setup('172.29.3.123', 'root', 'Administrator')
-    # dell_bmc_setup('172.29.3.124', 'root', 'Administrator')
-    # dell_bmc_setup('172.29.3.125', 'root', 'Administrator')
-    # dell_bmc_setup('172.29.3.126', 'root', 'Administrator')
-    # dell_bmc_setup('172.29.3.127', 'root', 'Administrator')
-
-    print("done")

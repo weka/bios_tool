@@ -31,7 +31,8 @@ optional arguments:
   --bmc-username BMC_USERNAME
                         a username to use on all hosts in --bmc_ips
   --bmc-password BMC_PASSWORD
-                        a password to use on all hosts in --bmc_ips
+                        a password to use on all hosts in --bmc-ips; visible to other users in ps and in
+                        shell history, so prefer $BIOS_TOOL_BMC_PASSWORD or the prompt
   -v, --verbose         enable verbose mode
   --version             report program version and exit
 
@@ -206,7 +207,9 @@ HPE:
 ```
 
 ### Command-line Host Specification
-Using `--bmc_ips` with a space separated list of IP addresses (ie: `--bmc_ips 192.168.1.1 192.168.1.2`) and `--bmc_username` and `--bmc_password` will allow you to easily configure a set of servers that have the same userid/password settings, rather than providing a configuration file.
+Using `--bmc-ips` with a space separated list of IP addresses (ie: `--bmc-ips 192.168.1.1 192.168.1.2`) and `--bmc-username` will allow you to easily configure a set of servers that have the same userid/password settings, rather than providing a configuration file. The password is read from `$BIOS_TOOL_BMC_PASSWORD`, or asked for; `--bmc-password` works too, but leaves it in `ps` and shell history.
+
+`--save-defaults` and `--diff-defaults` leave out the settings that identify one machine or hold its passwords (service tag, serial number, asset tag, setup and system passwords) and any MAC address, so the defaults database and the suggested settings can be shared.
 ### Version option
 Using `--version` will simply print the bios_tool version number and exit.
 
