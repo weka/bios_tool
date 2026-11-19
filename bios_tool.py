@@ -245,17 +245,18 @@ def diff_defaults(defaults_database, redfish_list):
 
 
 def bios_diff(hostlist):
+    """True if the two servers' BIOS settings differ, False if not, None if they cannot be compared."""
     hosta = hostlist[0]
     hostb = hostlist[1]
 
     if hosta.arch != hostb.arch:
         print()
         print(f"ERROR: Hosts are of different architectures! {hosta.arch} vs {hostb.arch}")
-        sys.exit(1)
+        return None
     if hosta.manufacturer != hostb.manufacturer:
         print()
         print(f"ERROR: Hosts are of different manufacturer! {hosta.manufacturer} vs {hostb.manufacturer}")
-        sys.exit(1)
+        return None
     if hosta.bmc.bios_version != hostb.bmc.bios_version:
         print()
         print(f"WARNING: Hosts have different BIOS versions! {hosta.bmc.bios_version} vs {hostb.bmc.bios_version}")
@@ -422,6 +423,105 @@ def find_bios_settings(server, all_bios_settings):
 
 
 
+def reset_bios(args, redfish_list):
+    """Resets the BIOS of every server to factory defaults, and reboots them with --reboot, after asking."""
+    then = " and reboot them" if args.reboot else ""
+    answer = confirm(f"Reset the BIOS of {len(redfish_list)} servers to factory defaults{then}: "
+                     f"{', '.join(server.hostname for server in redfish_list)}?", args.yes)
+    failed = answer is None
+    for server in redfish_list if answer else []:
+        if not server.bmc.reset_settings_to_default():
+            failed = True
+            continue
+        log.info(f"{server.hostname}'s BIOS will be reset to factory defaults at its next reboot")
+        if args.reboot:
+            if server.bmc.reboot():
+                log.info(f"{server.hostname} has been rebooted")
+            else:
+                log.error(f"Unable to reboot {server.hostname}")
+                failed = True
+    return 1 if failed else 0
+
+
+def check_and_fix(args, redfish_list, all_bios_settings):
+    """Checks every server's BIOS against the settings file, and with --fix and --reboot changes and reboots them."""
+    # check BIOS settings
+    hosts_needing_changes = list()
+    failed = False
+    fixed_hosts = list()
+    systems_rebooted = list()
+    # every host's settings are found before any host is changed, so an unknown server stops the run cleanly
+    wanted = dict()
+    unknown = list()
+    unmatched = 0
+    if not args.dump:
+        for server in redfish_list:
+            found = find_bios_settings(server, all_bios_settings)
+            if found is None:
+                unknown.append(server)
+            else:
+                wanted[server], missing = found
+                unmatched += len(missing)
+    if unknown and (args.fix or args.reboot):
+        log.error(f"No server was changed: {len(unknown)} of them are not in {args.bios}.")
+        return 1
+    # Loop through the servers
+    for server in redfish_list:
+        if args.dump:
+            server.bmc.print_settings()
+            continue
+        elif server in unknown:
+            continue
+        else:
+            settings = wanted[server]
+            log.info(f"Looking at {server.hostname}: {server.bmc.manufacturer}/{server.bmc.arch}/{server.bmc.model}:")
+            count = server.bmc.check_settings(settings)
+        #log.info(f"")
+        if count > 0:
+            log.info(f"{count} changes are needed on {server.hostname}")
+            hosts_needing_changes.append(server)
+            if args.fix:
+                if server.bmc.change_settings(settings):
+                    fixed_hosts.append(server)
+                else:
+                    log.error(f"Unable to fix {server.hostname}")
+                    failed = True
+        else:
+            log.warning(f"No changes are needed on {server.hostname}")
+        log.info("")
+
+    if args.reboot and not args.dump:
+        # only servers with BIOS changes waiting: those fixed now, and those fixed earlier without --reboot
+        to_reboot = [server for server in redfish_list if server not in unknown and
+                     (server in fixed_hosts or server.bmc.pending_changes())]
+        if not to_reboot:
+            log.info("No server has BIOS changes waiting for a reboot")
+        else:
+            answer = confirm(f"Reboot {len(to_reboot)} servers to apply their BIOS changes: "
+                             f"{', '.join(server.hostname for server in to_reboot)}?", args.yes)
+            failed = failed or answer is None
+            for server in to_reboot if answer else []:
+                log.info(f"Rebooting {server.hostname}")
+                if server.bmc.reboot():
+                    systems_rebooted.append(server)
+                else:
+                    log.error(f"Unable to reboot {server.hostname}")
+                    failed = True
+
+    if not args.fix:
+        log.info(f"There are {len(hosts_needing_changes)} hosts needing changes")
+    else:
+        if not args.reboot:
+            log.info(f"{len(fixed_hosts)} have been modified.  Please reboot them to activate changes.")
+        else:
+            log.info(f"{len(systems_rebooted)} have been successfully modified and rebooted.")
+    if unmatched:
+        log.error(f"{unmatched} settings from {args.bios} are not in their server's BIOS and were not checked.")
+    if unknown:
+        log.error(f"{len(unknown)} servers are not in {args.bios} and were not checked.")
+    return 1 if failed or unmatched or unknown else 0
+
+
 def confirm(question, assume_yes):
     """True or False for the answer to a yes/no question, or None if it could not be asked."""
     if assume_yes:
@@ -560,117 +660,35 @@ def main():
     log.info("Opening sessions to hosts:")
     redfish_list = parallel_open_sessions(hostlist)
 
-    if args.diff:
-        if len(redfish_list) != 2:
-            log.error(f"you must specify exactly 2 hosts to diff them")
-        elif not bios_diff(redfish_list):
-            log.info("The servers have identical BIOS settings")
-    elif args.diff_defaults:
-        diff_defaults(args.defaults_database, redfish_list)
-        pass
-    elif args.reset_bios:
-        then = " and reboot them" if args.reboot else ""
-        answer = confirm(f"Reset the BIOS of {len(redfish_list)} servers to factory defaults{then}: "
-                         f"{', '.join(server.hostname for server in redfish_list)}?", args.yes)
-        failed = answer is None
-        for server in redfish_list if answer else []:
-            if not server.bmc.reset_settings_to_default():
-                failed = True
-                continue
-            log.info(f"{server.hostname}'s BIOS will be reset to factory defaults at its next reboot")
-            if args.reboot:
-                if server.bmc.reboot():
-                    log.info(f"{server.hostname} has been rebooted")
-                else:
-                    log.error(f"Unable to reboot {server.hostname}")
-                    failed = True
-        if failed:
-            close_sessions(redfish_list)
-            sys.exit(1)
-    elif args.save:
-        save_bmc_db(redfish_list, args.defaults_database, force=args.force)
-    else:
-        # check BIOS settings
-        hosts_needing_changes = list()
-        fixed_hosts = list()
-        systems_rebooted = list()
-        # every host's settings are found before any host is changed, so an unknown server stops the run cleanly
-        wanted = dict()
-        unknown = list()
-        unmatched = 0
-        if not args.dump:
-            for server in redfish_list:
-                found = find_bios_settings(server, all_bios_settings)
-                if found is None:
-                    unknown.append(server)
-                else:
-                    wanted[server], missing = found
-                    unmatched += len(missing)
-        if unknown and (args.fix or args.reboot):
-            log.error(f"No server was changed: {len(unknown)} of them are not in {args.bios}.")
-            close_sessions(redfish_list)
-            sys.exit(1)
-        # Loop through the servers
-        for server in redfish_list:
-            if args.dump:
-                server.bmc.print_settings()
-                continue
-            elif server in unknown:
-                continue
-            else:
-                settings = wanted[server]
-                log.info(f"Looking at {server.hostname}: {server.bmc.manufacturer}/{server.bmc.arch}/{server.bmc.model}:")
-                count = server.bmc.check_settings(settings)
-            #log.info(f"")
-            if count > 0:
-                log.info(f"{count} changes are needed on {server.hostname}")
-                hosts_needing_changes.append(server)
-                if args.fix:
-                    if server.bmc.change_settings(settings):
-                        fixed_hosts.append(server)
-                    else:
-                        log.error(f"Unable to fix {server.hostname}")
-            else:
-                log.warning(f"No changes are needed on {server.hostname}")
-            log.info("")
+    unreachable = [host.hostname for host in hostlist if host not in redfish_list]
 
-        failed = False
-        if args.reboot and not args.dump:
-            # only servers with BIOS changes waiting: those fixed now, and those fixed earlier without --reboot
-            to_reboot = [server for server in redfish_list if server not in unknown and
-                         (server in fixed_hosts or server.bmc.pending_changes())]
-            if not to_reboot:
-                log.info("No server has BIOS changes waiting for a reboot")
+    try:
+        if args.diff:
+            if len(redfish_list) != 2:
+                log.error(f"you must specify exactly 2 hosts to diff them")
+                status = 1
             else:
-                answer = confirm(f"Reboot {len(to_reboot)} servers to apply their BIOS changes: "
-                                 f"{', '.join(server.hostname for server in to_reboot)}?", args.yes)
-                failed = answer is None
-                for server in to_reboot if answer else []:
-                    log.info(f"Rebooting {server.hostname}")
-                    if server.bmc.reboot():
-                        systems_rebooted.append(server)
-                    else:
-                        log.error(f"Unable to reboot {server.hostname}")
-                        failed = True
-
-        if not args.fix:
-            log.info(f"There are {len(hosts_needing_changes)} hosts needing changes")
+                different = bios_diff(redfish_list)
+                if different is False:
+                    log.info("The servers have identical BIOS settings")
+                status = 1 if different is None else 0
+        elif args.diff_defaults:
+            status = 0 if diff_defaults(args.defaults_database, redfish_list) else 1
+        elif args.reset_bios:
+            status = reset_bios(args, redfish_list)
+        elif args.save:
+            save_bmc_db(redfish_list, args.defaults_database, force=args.force)
+            status = 0
         else:
-            if not args.reboot:
-                log.info(f"{len(fixed_hosts)} have been modified.  Please reboot them to activate changes.")
-            else:
-                log.info(f"{len(systems_rebooted)} have been successfully modified and rebooted.")
-        if unmatched:
-            log.error(f"{unmatched} settings from {args.bios} are not in their server's BIOS and were not checked.")
-        if failed or unmatched:
-            close_sessions(redfish_list)
-            sys.exit(1)
-        if unknown:
-            log.error(f"{len(unknown)} servers are not in {args.bios} and were not checked.")
-            close_sessions(redfish_list)
-            sys.exit(1)
+            status = check_and_fix(args, redfish_list, all_bios_settings)
+    finally:
+        close_sessions(redfish_list)
 
-    close_sessions(redfish_list)
+    if unreachable:
+        log.error(f"{len(unreachable)} of {len(hostlist)} servers could not be reached, so nothing was done to them: "
+                  f"{', '.join(unreachable)}")
+        status = 1
+    sys.exit(status)
 
 
 if __name__ == '__main__':
