@@ -112,6 +112,8 @@ A model of `'*'` holds the settings every model of that manufacturer and archite
 With no command-line overrides, bios_tool will scan the hosts in the `host_config.csv` and note where they differ (if they differ) from the settings in the `bios_settings.yml` file.
 No changes are made to the servers (read-only mode)
 
+Every run that checks settings ends with a table of each server, its platform, and what happened to it.
+
 Example output:
 ```angular2html
 Opening sessions to hosts:
