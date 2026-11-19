@@ -463,16 +463,21 @@ def check_and_fix(args, redfish_list, all_bios_settings):
     wanted = dict()
     unknown = list()
     unmatched = 0
+    results = {server: [] for server in redfish_list}   # what happened to each server, for the summary
     if not args.dump:
         for server in redfish_list:
             found = find_bios_settings(server, all_bios_settings)
             if found is None:
                 unknown.append(server)
+                results[server].append(f"not in {args.bios}")
             else:
                 wanted[server], missing = found
                 unmatched += len(missing)
+                if missing:
+                    results[server].append(f"{len(missing)} settings not in its BIOS")
     if unknown and (args.fix or args.reboot):
         log.error(f"No server was changed: {len(unknown)} of them are not in {args.bios}.")
+        print_summary(results)
         return 1
     # Loop through the servers
     for server in redfish_list:
@@ -489,18 +494,24 @@ def check_and_fix(args, redfish_list, all_bios_settings):
             if changes:
                 log.info(f"{len(changes)} changes are needed on {server.hostname}")
                 hosts_needing_changes.append(server)
-                if args.fix:
-                    if server.bmc.change_settings(changes):
-                        fixed_hosts.append(server)
-                    else:
-                        log.error(f"Unable to fix {server.hostname}")
-                        failed = True
-            elif waiting:
+                if not args.fix:
+                    results[server].append(f"{len(changes)} settings to change")
+                elif server.bmc.change_settings(changes):
+                    fixed_hosts.append(server)
+                    results[server].append(f"{len(changes)} settings changed")
+                else:
+                    log.error(f"Unable to fix {server.hostname}")
+                    results[server].append(f"changing {len(changes)} settings failed")
+                    failed = True
+            if waiting:
                 log.info(f"{len(waiting)} changes on {server.hostname} are staged and wait for a reboot")
-            else:
+                results[server].append(f"{len(waiting)} settings staged earlier")
+            if not changes and not waiting:
                 log.info(f"No changes are needed on {server.hostname}")
+                results[server].append("as wanted")
         except Exception as exc:
             log.error(f"{server.hostname} failed: {exc}")
+            results[server].append(f"failed: {exc}")
             failed = True
         log.info("")
 
@@ -518,22 +529,34 @@ def check_and_fix(args, redfish_list, all_bios_settings):
                 log.info(f"Rebooting {server.hostname}")
                 if server.bmc.reboot():
                     systems_rebooted.append(server)
+                    results[server].append("rebooted")
                 else:
                     log.error(f"Unable to reboot {server.hostname}")
+                    results[server].append("reboot failed")
                     failed = True
 
+    if not args.dump:
+        print_summary(results)
     if not args.fix:
         log.info(f"There are {len(hosts_needing_changes)} hosts needing changes")
     else:
         if not args.reboot:
             log.info(f"{len(fixed_hosts)} have been modified.  Please reboot them to activate changes.")
         else:
-            log.info(f"{len(systems_rebooted)} have been successfully modified and rebooted.")
+            log.info(f"{len(fixed_hosts)} have been modified, and {len(systems_rebooted)} rebooted.")
     if unmatched:
         log.error(f"{unmatched} settings from {args.bios} are not in their server's BIOS and were not checked.")
     if unknown:
         log.error(f"{len(unknown)} servers are not in {args.bios} and were not checked.")
     return 1 if failed or unmatched or unknown else 0
+
+
+def print_summary(results):
+    rows = [[server.hostname, f"{server.manufacturer}/{server.arch}/{server.model}", "; ".join(notes)]
+            for server, notes in results.items()]
+    print()
+    print(tabulate(rows, headers=["Server", "Platform", "Result"]))
+    print()
 
 
 def confirm(question, assume_yes):

@@ -54,4 +54,4 @@ def test_a_failed_reboot_is_an_error(tool, hosts):
     hosts[0].post_status = 500
     assert tool.run("--fix", "--reboot", "--yes") == 1
     assert "Unable to reboot 10.0.0.1" in tool.log
-    assert "1 have been successfully modified and rebooted" in tool.log
+    assert "1 have been modified, and 1 rebooted" in tool.log
