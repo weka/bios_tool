@@ -402,6 +402,16 @@ def find_bios_settings(server, all_bios_settings, force=False):
 
 
 
+def confirm(question, assume_yes):
+    """True or False for the answer to a yes/no question, or None if it could not be asked."""
+    if assume_yes:
+        return True
+    if not sys.stdin.isatty():
+        log.error(f"{question} Not asked, as there is no terminal to answer on: run with --yes to answer yes.")
+        return None
+    return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
+
+
 def main():
     # parse arguments
     progname = sys.argv[0]
@@ -416,7 +426,10 @@ def main():
     parser.add_argument("--fix", dest="fix", default=False, action="store_true",
                         help="Correct any bios settings that do not match the definition")
     parser.add_argument("--reboot", dest="reboot", default=False, action="store_true",
-                        help="Reboot server if changes have been made")
+                        help="Reboot the servers with BIOS changes waiting to be applied (those --fix changed now or "
+                             "earlier), after asking")
+    parser.add_argument("-y", "--yes", dest="yes", default=False, action="store_true",
+                        help="Answer yes to the question before rebooting, so it can run without a terminal")
     parser.add_argument("--dump", dest="dump", default=False, action="store_true",
                         help="Print out current BIOS settings only")
     parser.add_argument("--save-defaults", dest="save", default=False, action="store_true",
@@ -584,16 +597,25 @@ def main():
             else:
                 log.warning(f"No changes are needed on {server.hostname}")
             log.info("")
-            # if they said reboot, reboot
-            if args.reboot:
-                if args.fix and server in fixed_hosts: # --fix --reboot implies rebooting only the hosts that were fixed
+
+        failed = False
+        if args.reboot and not args.dump:
+            # only servers with BIOS changes waiting: those fixed now, and those fixed earlier without --reboot
+            to_reboot = [server for server in redfish_list if server not in unknown and
+                         (server in fixed_hosts or server.bmc.pending_changes())]
+            if not to_reboot:
+                log.info("No server has BIOS changes waiting for a reboot")
+            else:
+                answer = confirm(f"Reboot {len(to_reboot)} servers to apply their BIOS changes: "
+                                 f"{', '.join(server.hostname for server in to_reboot)}?", args.yes)
+                failed = answer is None
+                for server in to_reboot if answer else []:
                     log.info(f"Rebooting {server.hostname}")
-                    server.bmc.reboot()
-                    systems_rebooted.append(server)
-                elif not args.fix:  # they asked to reboot all hosts
-                    log.info(f"Rebooting {server.hostname}")
-                    server.bmc.reboot()
-                    systems_rebooted.append(server)
+                    if server.bmc.reboot():
+                        systems_rebooted.append(server)
+                    else:
+                        log.error(f"Unable to reboot {server.hostname}")
+                        failed = True
 
         if not args.fix:
             log.info(f"There are {len(hosts_needing_changes)} hosts needing changes")
@@ -602,6 +624,9 @@ def main():
                 log.info(f"{len(fixed_hosts)} have been modified.  Please reboot them to activate changes.")
             else:
                 log.info(f"{len(systems_rebooted)} have been successfully modified and rebooted.")
+        if failed:
+            close_sessions(redfish_list)
+            sys.exit(1)
         if unknown:
             log.error(f"{len(unknown)} servers are not in {args.bios} and were not checked.")
             close_sessions(redfish_list)

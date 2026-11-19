@@ -222,6 +222,14 @@ class RedFishBMC(object):
 
         return count
 
+    def pending_changes(self):
+        """The BIOS settings staged on the BMC that differ from the current ones, applied at the next reboot."""
+        resp = self.redfish.get(self.bios_settings_uri)
+        if resp.status != 200:
+            return {}
+        current = self.bios_data.dict['Attributes']
+        return {key: value for key, value in resp.dict.get('Attributes', {}).items() if current.get(key) != value}
+
     def reset_settings_to_default(self):
         resp = self.redfish.post(self.reset_bios_uri, body={})
         if resp.status not in [200,201,202,203,204]:

@@ -16,7 +16,8 @@ optional arguments:
                         bios configuration filename
   --bmc-config          Configure the BMCs to allow RedFish access
   --fix                 Correct any bios settings that do not match the definition
-  --reboot              Reboot server if changes have been made
+  --reboot              Reboot the servers with BIOS changes waiting to be applied, after asking
+  -y, --yes             Answer yes to the question before rebooting
   --dump                Print out BIOS settings only
   --save-defaults       Save default BIOS settings to defaults-database - should be factory reset values
   --defaults-database DEFAULTS_DATABASE
@@ -129,8 +130,10 @@ Using the `--bmc_config` command line option will cause bios_tool to ssh to each
 Using the `--fix` command line option will cause the tool to make the settings to the bios as defined in the `bios_settings.yml`.   
 It will not reboot the server(s) unless given the `--reboot` option
 ### Reboot option
-Using a `--reboot` with `--fix` will make bios_tool reboot the servers after any changes are made.  
-Only servers that have been modified are rebooted (this causes them to APPLY the changes)
+`--reboot` reboots the servers whose BIOS has changes waiting to be applied: those that `--fix` changed in the same
+run, and those changed by an earlier `--fix` that were not rebooted. Other servers are not rebooted. bios_tool lists
+the servers and asks before rebooting them; `--yes` answers for you, and without a terminal to ask on it reboots
+nothing unless given `--yes`.
 ### Dump option
 Using the `--dump` command line option will cause the tool to simply print out all the bios settings for each server. (read-only)
 ### Save Defaults option
