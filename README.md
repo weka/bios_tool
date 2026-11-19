@@ -22,7 +22,7 @@ optional arguments:
   --save-defaults       Save default BIOS settings to defaults-database - should be factory reset values
   --defaults-database DEFAULTS_DATABASE
                         Filename of the factory defaults-database
-  -f, --force           Force overwriting existing BIOS settings and such
+  -f, --force           With --save-defaults, overwrite a model already in the defaults database
   --reset-bios          Reset the BIOS to factory defaults, after asking. To also reboot, add the --reboot option
   --diff DIFF DIFF      Compare 2 hosts BIOS settings
   --diff-defaults       Compare hosts BIOS settings to factory defaults
@@ -142,8 +142,14 @@ The defaults db is used to help generate the `bios_settings.yml` definitions, an
 ### Defaults Database option
 Use a different filename for the defaults database (default name is `defaults-db.yml`)
 ### Force option
-Using `--force` will allow bios_tool to do some possibly destructive behaviors.  There are two currently implemented - if the BIOS definition does not exactly match the server's keys, the tool will attempt to guess the correct key value.   Byu default, f it does not get a 100% match, it will not apply the change.  Using force will allow the tool to make the change.
-Force also applies to the `--save-defaults` option - if a default definition already exists for a particular server, the tool will not overwrite it's definition unless Forced.
+With `--save-defaults`, `--force` overwrites the definition of a model already in the defaults database.
+
+### How settings are matched to a server's BIOS
+A setting in `bios_settings.yml` is matched to the server's BIOS setting with the same name. If there is none, it is
+matched to the one with the same name once a Supermicro `_XXXX` suffix is removed from both, and then to the one with
+the same letters and digits, ignoring case and punctuation (so `Hyper-Threading[ALL]` matches `Hyper_Threading_ALL_`);
+each of those only if exactly one setting matches. A setting that matches none, or several, is reported with the
+closest names, is neither checked nor changed, and makes bios_tool exit with status 1.
 ### Diff option
 Using the `--diff` option will compare all the settings on 2 servers, and print out which settings differ.  This is used to help generate the `bios_settings.yml` file.
 
@@ -210,10 +216,9 @@ From time to time, we run across new servers - a new model, for example.   When 
 The process for doing this is pretty straightforward:
 1. Reset the BIOS to default values (brand-new servers should already have default values set, so this can sometimes be skipped), and reboot the server to have the settings take effect.
 2. Use the `bios_tool --save-defaults` option to copy the default values from the server and save it in the defaults database
-3. Allow bios_tool to try to apply the wildcard values (if the `bios_settings.yml` has a wildcard)
-   3a. If there is an exact match (ie: new server uses the same or very very similar BIOS to another model), try testing with those values
-   3b. If there is a "close" match, use your judgement with the `--force` option to apply the settings
-   3c. If no close match, manually set the BIOS on the server, following the guidelines on get.weka.io
+3. Run bios_tool against the server: it applies the `'*'` settings of its manufacturer and architecture, if there are any
+   3a. If every setting matches, try testing with those values
+   3b. If some settings are reported as not in this server's BIOS, look at the closest names it reports and set them on the server yourself, following the guidelines on get.weka.io
 4. Use `bios_tool --diff-defaults` to generate the YAML definition of the new server and add it to `bios_settings.yml`
    4a. Use some judgement and edit the YAML; it should be fairly obvious what settings aren't needed or incorrect
 5. Apply the settings to the rest of the servers that are to be clustered

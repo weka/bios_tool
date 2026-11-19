@@ -1,4 +1,5 @@
 import argparse
+import difflib
 import logging
 import sys
 import redfish
@@ -356,11 +357,29 @@ def trim_trailing_hex(s):
     else:
         return s[:-5]
 
-# for the given server (bmc), try to find the settings in all_bios_settings, verify that the keys match, then return it
-# match the keys using fuzzy logic, and return the actual keys (prevents failures).
-# If there is no match for the server model, try finding one that matches closely?
-from rapidfuzz import process, fuzz
-def find_bios_settings(server, all_bios_settings, force=False):
+def squash(name):
+    return "".join(c for c in name.lower() if c.isalnum())
+
+
+def match_setting(name, bios_keys):
+    """The setting in bios_keys that name means, and None; or None and the settings it could equally mean. Only a
+    certain match counts: the exact name; the same name without Supermicro's _XXXX suffix; or the same letters and
+    digits, ignoring case and punctuation (Supermicro's SUM spells Hyper-Threading[ALL] what Redfish calls
+    Hyper_Threading_ALL_). Each step is taken only if it finds exactly one setting."""
+    if name in bios_keys:
+        return name, []
+    for same in (trim_trailing_hex, lambda key: squash(trim_trailing_hex(key))):
+        candidates = [key for key in bios_keys if same(key) == same(name)]
+        if len(candidates) == 1:
+            return candidates[0], []
+        if candidates:
+            return None, candidates
+    return None, []
+
+
+def find_bios_settings(server, all_bios_settings):
+    """The settings this server should have, under the names its BIOS uses, and the settings from the file that
+    could not be matched to one; or None if the file has no entry for this kind of server."""
     platform = f"{server.manufacturer}/{server.arch}/{server.model}"
     if server.manufacturer not in all_bios_settings:
         log.error(f"{server.hostname} is a {platform}: there is no '{server.manufacturer}' manufacturer in the BIOS "
@@ -381,54 +400,25 @@ def find_bios_settings(server, all_bios_settings, force=False):
     base_settings = dict(arch.get('*') or {})
     base_settings.update(arch.get(server.model) or {})
 
-    derived_keys = dict()
-    preprocessor = trim_trailing_hex if server.manufacturer == "Supermicro" else None
-
-    log.debug(f"{server.manufacturer} using {preprocessor}")
-    # server_full_bios are what is set on the server now - all bios settings
-    server_full_bios = server.bios_settings.keys()
-    # base settings are a subset of settings from the bios_settings.yml file - what we want the settings to be
-    for setting in base_settings.keys():
-        # check to see if the settings we want to make are actual settings in the BIOS of this server
-        keyword = process.extract(setting, server_full_bios, processor=preprocessor, scorer=fuzz.ratio, limit=1)
-        if len(keyword) == 0:
-            log.error(f"Server {server.hostname}: Unknown setting: {setting}. Aborting.")
-            return None
-
-        keyword, similarity, _ = keyword[0]
-        # is it an exact match?
-        if similarity != 100.0:
-            #log.warning(
-            #   f"BIOS Keys for {server.hostname}/{server.manufacturer}/{server.model} do not match the definition")
-            if not wild:
-                log.warning(f"BIOS Keys are different than previously recorded - {setting}")
-            else:
-                log.warning(f"Trying to match BIOS Keys from wildcard definition")
-            if similarity > 75:
-                log.info(f"Possible match found: {server.hostname}/{server.manufacturer}/{server.model}/{setting} is {keyword}, similarity {similarity}")
-                if force:
-                    log.info(f"Forcing setting: {setting}.")
-                    derived_keys[setting] = (keyword, similarity)
-            else:
-                log.warning( f"Match NOT found? {server.hostname}/{server.manufacturer}/{server.model}/{setting} is {keyword}, similarity {similarity}. Skipping setting")
-        else:
-            derived_keys[setting] = (keyword, similarity)
-
-    # at this point, we should analyze the results - normally they should all be 100.0% similarity,
-    # unless this server is running a different BIOS version, but they should be very similar...
-    # unless a wildcard was used - then all bets are off
+    bios_keys = list(server.bios_settings.keys())
     this_servers_settings = dict()
-    for setting, target_tuple in derived_keys.items():
-        this_servers_settings[target_tuple[0]] = base_settings[setting]   # sets the value
-
-    #if wild:
-    #    print(f"We used a wildcard for {server.hostname}: '{server.model}'.")
-
-    if len(base_settings.keys()) != len(derived_keys.keys()):
-        log.warning(f"{server.hostname}'s settings do not match defined settings for {server.manufacturer}/{server.model}.")
-        log.warning(f"This server's settings should be manually reviewed")
-
-    return this_servers_settings
+    unmatched = list()
+    for setting, value in base_settings.items():
+        key, candidates = match_setting(setting, bios_keys)
+        if key is None:
+            if candidates:
+                reason = f"it could be any of {', '.join(candidates)}"
+            else:
+                close = difflib.get_close_matches(setting, bios_keys, n=3, cutoff=0.6)
+                reason = f"the closest are {', '.join(close)}" if close else "no setting is close"
+            log.error(f"{server.hostname}: {setting} is not in this server's BIOS, so it is neither checked nor "
+                      f"changed ({reason})")
+            unmatched.append(setting)
+            continue
+        if key != setting:
+            log.debug(f"{server.hostname}: {setting} is called {key} on this server")
+        this_servers_settings[key] = value
+    return this_servers_settings, unmatched
 
 
 
@@ -467,7 +457,7 @@ def main():
     parser.add_argument("--defaults-database", dest="defaults_database", default="defaults-db.yml",
                         help="Filename of the factory defaults-database.  Default is defaults-db.yml")
     parser.add_argument("-f", "--force", dest="force", default=False, action="store_true",
-                        help="Force overwriting existing BIOS settings and such")
+                        help="With --save-defaults, overwrite a model already in the defaults database")
     parser.add_argument("--reset-bios", dest="reset_bios", default=False, action="store_true",
                         help="Reset the BIOS to factory defaults, after asking. To also reboot, add the --reboot option")
     parser.add_argument("--diff", dest="diff", nargs=2, default=False, help="Compare 2 hosts BIOS settings")
@@ -607,11 +597,15 @@ def main():
         # every host's settings are found before any host is changed, so an unknown server stops the run cleanly
         wanted = dict()
         unknown = list()
+        unmatched = 0
         if not args.dump:
             for server in redfish_list:
-                wanted[server] = find_bios_settings(server, all_bios_settings)
-                if wanted[server] is None:
+                found = find_bios_settings(server, all_bios_settings)
+                if found is None:
                     unknown.append(server)
+                else:
+                    wanted[server], missing = found
+                    unmatched += len(missing)
         if unknown and (args.fix or args.reboot):
             log.error(f"No server was changed: {len(unknown)} of them are not in {args.bios}.")
             close_sessions(redfish_list)
@@ -666,7 +660,9 @@ def main():
                 log.info(f"{len(fixed_hosts)} have been modified.  Please reboot them to activate changes.")
             else:
                 log.info(f"{len(systems_rebooted)} have been successfully modified and rebooted.")
-        if failed:
+        if unmatched:
+            log.error(f"{unmatched} settings from {args.bios} are not in their server's BIOS and were not checked.")
+        if failed or unmatched:
             close_sessions(redfish_list)
             sys.exit(1)
         if unknown:
