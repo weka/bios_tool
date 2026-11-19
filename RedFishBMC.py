@@ -21,6 +21,11 @@ def trim_supermicro_key(key):
     return key[:-5] if (key[-5] == "_" and is_hex(key[-4])) else key
 
 
+READ_TIMEOUT = 60
+WRITE_TIMEOUT = 300
+SETTINGS_OBJECTS = ("Settings", "SD", "Pending")    # Dell and HPE, Supermicro, Lenovo
+
+
 def same(a, b):
     """Whether two BIOS values are equal, as BMCs and YAML spell them: "1" and 1, False and false."""
     def norm(value):
@@ -85,71 +90,83 @@ class RedFishBMC(object):
             log.error(f"Error logging into {hostname}: {exc}")
             raise
 
-        # increase timeout for all future operations
-        self.redfish._timeout = None
-
-        # get the Vendor ID
-        self.vendor = next(iter(self.redfish.root.get("Oem", {}).keys()), None)
-        if self.vendor is None:
-            self.vendor = self.redfish.root.get("Vendor", None)
-
-        # get Systems
-        self.systems_uri = self.redfish.root['Systems']['@odata.id']
-        self.systems_response = self.redfish.get(self.systems_uri)  # ie: /redfish/v1/Systems
-        self.systems_members_uri = next(iter(self.systems_response.dict['Members']))['@odata.id']
-        self.systems_members_response = self.redfish.get(self.systems_members_uri)  # ie: /redfish/v1/Systems/1
-
-        # get bios identification info
-        self.manufacturer = self.systems_members_response.dict.get('Manufacturer', None)
-        self.model = self.systems_members_response.dict.get('Model', None)
-        self.bios_version = self.systems_members_response.dict.get('BiosVersion', None)
-
-        self.systems_members_response_actions = self.systems_members_response.dict['Actions']
+        # every later read gets READ_TIMEOUT, every write WRITE_TIMEOUT, so a BMC that stops answering cannot hang the run
+        self.redfish._timeout = READ_TIMEOUT
         try:
-            self.system_reset_types = self.systems_members_response_actions['#ComputerSystem.Reset']['ResetType@Redfish.AllowableValues']
-        except KeyError:
-            #self.system_reset_types = None   # SMC doesn't have this key...
-            self.system_reset_action_info = self.redfish.get(
-                        self.systems_members_response_actions['#ComputerSystem.Reset']['@Redfish.ActionInfo'])
-            self.system_reset_types = self.system_reset_action_info.dict['Parameters'][0]['AllowableValues']
+            self._discover()
+        except Exception:
+            self.close()
+            raise
 
-        # get Processors
-        self.proc_uri = self.systems_members_response.dict['Processors']['@odata.id']
-        self.proc_data = self.redfish.get(self.proc_uri)
+    def close(self):
+        try:
+            self.redfish.logout()
+        except Exception as exc:
+            log.warning(f"Could not log out of {self.name}: {exc}")
+
+    def _only_member(self, collection_uri, what):
+        members = self.redfish.get(collection_uri).dict.get('Members', [])
+        if len(members) != 1:
+            raise Exception(f"{self.name} has {len(members)} {what}s; bios_tool works with a BMC that has exactly one")
+        uri = members[0]['@odata.id']
+        return uri, self.redfish.get(uri)
+
+    def _discover(self):
+        root = self.redfish.root
+        self.vendor = next(iter((root.get("Oem") or {}).keys()), None) or root.get("Vendor")
+
+        self.systems_members_uri, self.systems_members_response = self._only_member(root['Systems']['@odata.id'],
+                                                                                     "system")
+        system = self.systems_members_response.dict
+        self.manufacturer = system.get('Manufacturer')
+        self.model = system.get('Model')
+        self.bios_version = system.get('BiosVersion')
+
+        reset = system.get('Actions', {}).get('#ComputerSystem.Reset', {})
+        self.reset_target = reset.get('target')
+        self.system_reset_types = reset.get('ResetType@Redfish.AllowableValues')
+        if self.system_reset_types is None and '@Redfish.ActionInfo' in reset:
+            parameters = self.redfish.get(reset['@Redfish.ActionInfo']).dict.get('Parameters', [])
+            self.system_reset_types = next((p.get('AllowableValues') for p in parameters
+                                            if p.get('Name', 'ResetType') == 'ResetType'), None)
+        self.system_reset_types = self.system_reset_types or []
+
         self.arch = None
-        for member in self.proc_data.dict.get('Members', []):
+        processors = system.get('Processors', {}).get('@odata.id')
+        for member in self.redfish.get(processors).dict.get('Members', []) if processors else []:
             self.arch = cpu_arch(self.redfish.get(member['@odata.id']).dict)
             if self.arch is not None:
                 break
 
-        # fetch the actual BIOS settings
-        self.bios_uri = self.systems_members_response.dict['Bios']['@odata.id']
-        self.bios_data = self.redfish.get(self.bios_uri)  # ie: /redfish/v1/Systems/1/Bios
+        if 'Bios' not in system:
+            raise Exception(f"{self.name} does not offer its BIOS settings over Redfish")
+        self.bios_uri = system['Bios']['@odata.id']
+        self.bios_data = self.redfish.get(self.bios_uri)
+        if self.bios_data.status != 200 or 'error' in self.bios_data.dict:
+            info = self.bios_data.dict.get('error', {}).get('@Message.ExtendedInfo', '')
+            raise Exception(f"Error fetching BIOS settings for {self.name} (HTTP {self.bios_data.status}): {info}")
+        self.reset_bios_uri = self.bios_data.dict.get('Actions', {}).get('#Bios.ResetBios', {}).get('target')
+        settings = self.bios_data.dict.get('@Redfish.Settings') or {}
+        self.supported_apply_times = settings.get('SupportedApplyTimes')
+        self.bios_settings_uri = settings.get('SettingsObject', {}).get('@odata.id') or self._find_settings_object()
 
-        if 'error' in self.bios_data.dict:
-            #log.error(f"Error fetching BIOS settings for {self.name}: {self.bios_data.dict['error']['@Message.ExtendedInfo']}")
-            raise Exception(f"Error fetching BIOS settings for {self.name}: {self.bios_data.dict['error']['@Message.ExtendedInfo']}")
-        self.bios_actions_dict = self.bios_data.dict['Actions']
-        self.reset_bios_uri = self.bios_actions_dict['#Bios.ResetBios']['target']
-        
-        if '@Redfish.Settings' not in self.bios_data.dict:
-            log.error(f"Error retrieving settings from {hostname} even though credentials are fine - check any pending/scheduled changes to the BMC and reboot" )
+        self.managers_members_response = None
+        self.bmc_firmware_version = None
+        if 'Managers' in root:
+            members = self.redfish.get(root['Managers']['@odata.id']).dict.get('Members', [])
+            if members:
+                self.managers_members_response = self.redfish.get(members[0]['@odata.id'])
+                self.bmc_firmware_version = self.managers_members_response.dict.get('FirmwareVersion')
 
-        self.bios_settings_uri = self.bios_data.dict['@Redfish.Settings']['SettingsObject']['@odata.id']
-        #self.redfish_settings = self.bios_data.dict['@Redfish.Settings']
-        if 'SupportedApplyTimes' in self.bios_data.dict['@Redfish.Settings']:
-            self.supported_apply_times = self.bios_data.dict['@Redfish.Settings']['SupportedApplyTimes']
-        else:
-            self.supported_apply_times = None
-        
-
-        self.managers_uri = self.redfish.root['Managers']['@odata.id']
-        self.managers_data = self.redfish.get(self.managers_uri)
-        self.managers_members_uri = next(iter(self.managers_data.dict['Members']))['@odata.id']
-        self.managers_members_response = self.redfish.get(self.managers_members_uri)  # ie: /redfish/v1/Managers/1
-        self.managers_members_actions = self.managers_members_response.dict['Actions']
-        self.bmc_firmware_version = self.managers_members_response.dict['FirmwareVersion']
-        #print()
+    def _find_settings_object(self):
+        """Where BIOS changes are staged, for a BMC whose BIOS resource does not say: the vendors' usual places."""
+        for name in SETTINGS_OBJECTS:
+            uri = f"{self.bios_uri}/{name}"
+            if self.redfish.get(uri).status == 200:
+                log.info(f"{self.name} does not say where to stage BIOS changes; using {uri}")
+                return uri
+        log.warning(f"{self.name} does not say where to stage BIOS changes, and none of the usual places exist")
+        return None
 
     def get_bios_settings(self):
         return self.bios_data.dict['Attributes']
@@ -184,7 +201,10 @@ class RedFishBMC(object):
         if self.supported_apply_times is not None and "OnReset" in self.supported_apply_times:
             body["@Redfish.SettingsApplyTime"] = {"ApplyTime": "OnReset"}
 
-        resp = self.redfish.patch(self.bios_settings_uri, body=body)
+        if self.bios_settings_uri is None:
+            log.error(f"{self.name} does not say where to stage BIOS changes, so they cannot be made")
+            return False
+        resp = self.redfish.patch(self.bios_settings_uri, body=body, timeout=WRITE_TIMEOUT)
         if resp.status not in [200, 201, 202, 204]:
             messages = [info.get('Message', '') for info in
                         resp.dict.get('error', {}).get('@Message.ExtendedInfo', [])]
@@ -223,6 +243,8 @@ class RedFishBMC(object):
 
     def staged_settings(self):
         """The BIOS settings staged on the BMC for the next reboot, or {} if it shows none."""
+        if self.bios_settings_uri is None:
+            return {}
         resp = self.redfish.get(self.bios_settings_uri)
         return resp.dict.get('Attributes', {}) if resp.status == 200 else {}
 
@@ -232,7 +254,10 @@ class RedFishBMC(object):
         return {key: value for key, value in self.staged_settings().items() if not same(current.get(key), value)}
 
     def reset_settings_to_default(self):
-        resp = self.redfish.post(self.reset_bios_uri, body={})
+        if self.reset_bios_uri is None:
+            log.error(f"{self.name} does not offer a BIOS reset to defaults")
+            return False
+        resp = self.redfish.post(self.reset_bios_uri, body={}, timeout=WRITE_TIMEOUT)
         if resp.status not in [200,201,202,203,204]:
             error_dict = resp.dict['error'] if 'error' in resp.dict else None
             log.error(f"An http response of '{resp.status}' was returned attempting to reset bios to default on {self.name}.")
@@ -246,7 +271,10 @@ class RedFishBMC(object):
         print(json.dumps(self.bios_data.obj.Attributes, indent=4, sort_keys=True))
 
     def reboot(self):
-        action = self.systems_members_response.obj.Actions['#ComputerSystem.Reset']['target']
+        action = self.reset_target
+        if action is None:
+            log.error(f"{self.name} does not offer a way to reboot it")
+            return False
         # print(json.dumps(self.systems_members_response.obj.Actions['#ComputerSystem.Reset']))
         body = dict()
         if self.systems_members_response.obj.PowerState != "On":
@@ -259,7 +287,7 @@ class RedFishBMC(object):
             else:
                 body['ResetType'] = 'On'
 
-        resp = self.redfish.post(action, body=body)
+        resp = self.redfish.post(action, body=body, timeout=WRITE_TIMEOUT)
         print(f'reset status: {resp.status}')
         if resp.status not in [200,201,202,203,204]:
             log.error(f"An http response of '{resp.status}' was returned attempting to reboot {self.name}.\n")
