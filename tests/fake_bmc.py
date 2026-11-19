@@ -1,0 +1,157 @@
+"""A fake Redfish BMC, so bios_tool can be tested without hardware.
+
+Each FakeBMC holds the Redfish documents of one server, keyed by URI, and records every PATCH and POST it receives.
+The profiles below are synthetic: they follow the shape each vendor's BMC returns, not any real machine's values.
+"""
+import copy
+import json
+
+import redfish
+from redfish.rest.v1 import RisObject
+
+ROOT = "/redfish/v1"
+
+
+class FakeResponse:
+    def __init__(self, status, body=None):
+        self.status = status
+        self.dict = body if body is not None else {}
+        self.text = json.dumps(self.dict)
+
+    @property
+    def obj(self):
+        return RisObject.parse(self.dict)
+
+
+class FakeBMC:
+    def __init__(self, docs, username="admin", password="secret"):
+        self.docs = docs
+        self.username = username
+        self.password = password
+        self.patches = []       # (uri, body)
+        self.posts = []         # (uri, body)
+        self.logged_in = False
+        self.logged_out = False
+        self.patch_status = 200
+        self.post_status = 200
+
+    def system(self):
+        return self.docs[self.docs[self.docs[ROOT]["Systems"]["@odata.id"]]["Members"][0]["@odata.id"]]
+
+    def bios(self):
+        return self.docs[self.system()["Bios"]["@odata.id"]]
+
+    def pending(self):
+        return self.docs[self.bios()["@Redfish.Settings"]["SettingsObject"]["@odata.id"]]["Attributes"]
+
+    def resets(self):
+        return [body.get("ResetType") for uri, body in self.posts if uri.endswith("ComputerSystem.Reset")]
+
+    def get(self, uri):
+        uri = uri.rstrip("/") or ROOT
+        if uri not in self.docs:
+            return FakeResponse(404, {"error": {"code": "Base.1.0.ResourceMissingAtURI",
+                                                "@Message.ExtendedInfo": [{"Message": f"{uri} not found"}]}})
+        return FakeResponse(200, copy.deepcopy(self.docs[uri]))
+
+    def patch(self, uri, body):
+        self.patches.append((uri, copy.deepcopy(body)))
+        if self.patch_status < 300 and uri in self.docs:
+            self.docs[uri].setdefault("Attributes", {}).update(body.get("Attributes", {}))
+        return FakeResponse(self.patch_status)
+
+    def post(self, uri, body):
+        self.posts.append((uri, copy.deepcopy(body)))
+        return FakeResponse(self.post_status)
+
+
+class FakeClient:
+    """Stands in for redfish.rest.v1.HttpClient, as returned by redfish.redfish_client."""
+
+    def __init__(self, bmc, username, password):
+        self.bmc = bmc
+        self.username = username
+        self.password = password
+        self._timeout = 10
+
+    @property
+    def root(self):
+        return RisObject.parse(copy.deepcopy(self.bmc.docs[ROOT]))
+
+    def login(self, auth="session"):
+        if (self.username, self.password) != (self.bmc.username, self.bmc.password):
+            raise redfish.rest.v1.InvalidCredentialsError(401)
+        self.bmc.logged_in = True
+
+    def logout(self):
+        self.bmc.logged_out = True
+
+    def get(self, uri, *args, **kwargs):
+        return self.bmc.get(uri)
+
+    def patch(self, uri, body=None, *args, **kwargs):
+        return self.bmc.patch(uri, body or {})
+
+    def post(self, uri, body=None, *args, **kwargs):
+        return self.bmc.post(uri, body or {})
+
+
+def _server(system_id, manufacturer, model, cpu, attributes, settings_object, apply_times=None,
+            reset_types=None, oem="Dell", firmware="1.00"):
+    system = f"{ROOT}/Systems/{system_id}"
+    manager = f"{ROOT}/Managers/1"
+    reset = {"target": f"{system}/Actions/ComputerSystem.Reset"}
+    docs = {
+        ROOT: {"Oem": {oem: {}}, "Systems": {"@odata.id": f"{ROOT}/Systems"},
+               "Managers": {"@odata.id": f"{ROOT}/Managers"}},
+        f"{ROOT}/Systems": {"Members": [{"@odata.id": system}]},
+        system: {"Manufacturer": manufacturer, "Model": model, "BiosVersion": "1.0.0", "PowerState": "On",
+                 "Actions": {"#ComputerSystem.Reset": reset},
+                 "Processors": {"@odata.id": f"{system}/Processors"},
+                 "Bios": {"@odata.id": f"{system}/Bios"}},
+        f"{system}/Processors": {"Members": [{"@odata.id": f"{system}/Processors/CPU1"}]},
+        f"{system}/Processors/CPU1": cpu,
+        f"{system}/Bios": {"Attributes": dict(attributes),
+                           "Actions": {"#Bios.ResetBios": {"target": f"{system}/Bios/Actions/Bios.ResetBios"}},
+                           "@Redfish.Settings": {"SettingsObject": {"@odata.id": f"{system}/Bios/{settings_object}"}}},
+        f"{system}/Bios/{settings_object}": {"Attributes": {}},
+        f"{ROOT}/Managers": {"Members": [{"@odata.id": manager}]},
+        manager: {"FirmwareVersion": firmware, "Actions": {}},
+    }
+    if apply_times is not None:
+        docs[f"{system}/Bios"]["@Redfish.Settings"]["SupportedApplyTimes"] = apply_times
+    if reset_types is None:
+        info = f"{system}/ResetActionInfo"
+        reset["@Redfish.ActionInfo"] = info
+        docs[info] = {"Parameters": [{"Name": "ResetType",
+                                      "AllowableValues": ["On", "ForceOff", "GracefulRestart", "ForceRestart"]}]}
+    else:
+        reset["ResetType@Redfish.AllowableValues"] = reset_types
+    return docs
+
+
+AMD_CPU = {"Model": "AMD EPYC 9454P 48-Core Processor", "ProcessorArchitecture": "x86",
+           "InstructionSet": "x86-64", "ProcessorId": {"VendorId": "AuthenticAMD"}}
+INTEL_CPU = {"Model": "Intel(R) Xeon(R) Gold 6530", "ProcessorArchitecture": "x86",
+             "InstructionSet": "x86-64", "ProcessorId": {"VendorId": "GenuineIntel"}}
+ARM_CPU = {"Model": "Ampere(R) Altra(R) Max Processor", "ProcessorArchitecture": "ARM",
+           "InstructionSet": "ARM-A64", "ProcessorId": {"VendorId": "Ampere(R)"}}
+
+
+def dell(model="PowerEdge R6615", cpu=AMD_CPU, **attributes):
+    attrs = {"LogicalProc": "Enabled", "ProcVirtualization": "Enabled", "BootMode": "Uefi",
+             "SecureBoot": "Disabled", "SysProfile": "PerfOptimized"}
+    attrs.update(attributes)
+    return _server("System.Embedded.1", "Dell Inc.", model, cpu, attrs, "Settings",
+                   apply_times=["OnReset", "Immediate"],
+                   reset_types=["On", "ForceOff", "GracefulRestart", "ForceRestart"], oem="Dell")
+
+
+def supermicro(model="AS -1115CS-TNR", cpu=AMD_CPU, **attributes):
+    attrs = {"SMTControl_0037": "Enabled", "IOMMU_0038": "Auto", "ConsoleRedirection_00A5": "Disabled"}
+    attrs.update(attributes)
+    return _server("1", "Supermicro", model, cpu, attrs, "SD", oem="Supermicro")
+
+
+def make_bmc(docs, **kwargs):
+    return FakeBMC(docs, **kwargs)
