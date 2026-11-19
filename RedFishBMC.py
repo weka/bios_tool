@@ -1,24 +1,10 @@
 import json
-#from pprint import pprint
 
 import redfish
 
 from logging import getLogger
 
-#from setuptools.command.build_ext import if_dl
-
-#from paramiko.util import log_to_file
-
 log = getLogger(__name__)
-
-
-def is_hex(param):
-    import string
-    return all(c in string.hexdigits for c in param)
-
-def trim_supermicro_key(key):
-    # Supermicro uses a _XXXX (hex) suffix for the key - trim it off
-    return key[:-5] if (key[-5] == "_" and is_hex(key[-4])) else key
 
 
 READ_TIMEOUT = 60
@@ -61,23 +47,8 @@ def cpu_arch(processor):
     return None
 
 
-def trim_supermicro_dict(settings_dict):
-    new_settings_dict = dict()
-    for key, value in settings_dict.items():
-        new_settings_dict[trim_supermicro_key(key)] = value
-    return new_settings_dict
-
-
 class RedFishBMC(object):
     def __init__(self, hostname, username=None, password=None, ca_file=None):
-        # create the redfish object
-        self.cdrom_eject_uri = None
-        self.cdrom_mount_uri = None
-        self.cdrom_dev = None
-        self.cdrom_uri = None
-        self.virtual_media_list = None
-        self.virtual_media_data = None
-        self.virtual_media_uri = None
         self.redfish = redfish.redfish_client(base_url="https://" + hostname, username=username, password=password,
                                               default_prefix='/redfish/v1', timeout=10, max_retry=2,
                                               cafile=ca_file)
@@ -178,29 +149,6 @@ class RedFishBMC(object):
     def get_bios_settings(self):
         return self.bios_data.dict['Attributes']
 
-
-    def get_cdrom_info(self):
-        # get the Virtual CD-ROM
-        self.virtual_media_uri = self.managers_members_response.dict['VirtualMedia']['@odata.id']
-        self.virtual_media_data = self.redfish.get(self.virtual_media_uri)  # ie: /redfish/v1/Managers/1/VirtualMedia
-        self.virtual_media_list = list()
-        for device in self.virtual_media_data.dict['Members']:
-            vdev = self.redfish.get(device['@odata.id'])
-            # self.virtual_media_list.append(self.redfish.get(device['@odata.id']))
-            for mediatype in vdev.obj.MediaTypes:
-                if mediatype == 'CD' or mediatype == "DVD":
-                    # found it!
-                    self.cdrom_uri = device['@odata.id']
-                    self.cdrom_dev = vdev
-                    self.cdrom_mount_uri = vdev.dict['Actions']['#VirtualMedia.InsertMedia']['target']
-                    self.cdrom_eject_uri = vdev.dict['Actions']['#VirtualMedia.EjectMedia']['target']
-                    break
-
-    def mount_cd(self, target):
-        pass
-
-    def eject_cd(self):
-        pass
 
     def change_settings(self, settings_dict):
         """Stages settings_dict for the next reboot, and confirms the BMC staged every one of them."""
@@ -329,9 +277,7 @@ class RedFishBMC(object):
             log.error(f"{self.name} could not be asked to reset its BIOS: {exc}")
             return False
         if resp.status not in [200,201,202,203,204]:
-            error_dict = resp.dict['error'] if 'error' in resp.dict else None
-            log.error(f"An http response of '{resp.status}' was returned attempting to reset bios to default on {self.name}.")
-            log.error(f"The URI attempted was {self.reset_bios_uri}\n")
+            log.error(f"{self.name} refused to reset its BIOS to defaults (HTTP {resp.status}) at {self.reset_bios_uri}")
             return False
         else:
             return True
@@ -364,30 +310,3 @@ class RedFishBMC(object):
             return False
         log.info(f"{self.name} accepted a {reset_type}")
         return True
-
-    def adjust_supermicro_settings(self, settings_dict):
-        new_settings_dict = dict()
-
-        for key, value in settings_dict.items():
-            new_key = self.supermicro_find_key(trim_supermicro_key(key))
-            if new_key is None:
-                log.error(f"Unable to find key {key} in the Supermicro BIOS settings")
-                continue
-            new_settings_dict[new_key] = value
-
-        if len(new_settings_dict) == 0:
-            log.error(f"Unable to find any keys in the Supermicro BIOS settings")
-            return None
-        return new_settings_dict
-
-    def supermicro_find_key(self, key):
-        # Supermicro (sometimes) uses a different key for the same setting (they add a _ and 4-digit hex number: xxx_010F
-        # This function will convert the key to the correct one for Supermicro
-        #keys = list(self.bios_data.obj.Attributes.keys())
-        for server_key in self.bios_data.obj.Attributes.keys():
-            if "_" in server_key and len(server_key) > 5 and server_key[-5] == "_" and is_hex(server_key[-4]) and server_key[:-5] == key:
-                return server_key
-            else:
-                if server_key == key:
-                    return server_key
-        return None

@@ -274,7 +274,7 @@ def diff_defaults(defaults_database, redfish_list):
         log.info("None of the servers have non-default settings")
     else:
         print()
-        print(f"Bios Differences (Edit these before adding to the bios_settings file):")
+        print("Bios Differences (Edit these before adding to the bios_settings file):")
         print(yaml.dump(custom_settings))
     return True
 
@@ -333,25 +333,6 @@ def bios_diff(hostlist):
 
     return are_different
 
-# detail the differences between 2 dicts (keys in one and not in the other, and different values for the same key
-def diff_dicts(dict1, dict2):
-    diff = list()
-    keys_not_present_in1 = list()
-    keys_not_present_in2 = list()
-    for key, value in dict1.items():
-        if key not in dict2:
-            keys_not_present_in2.append([key, value, "key not present"])
-        elif dict2[key] != value:
-            diff.append([key, value, dict2[key]])
-
-    # check for key in b that are not in a
-    for key, value in dict2.items():
-        if key not in dict1:
-            keys_not_present_in1.append([key, "key not present", value])
-
-    return (diff, keys_not_present_in1, keys_not_present_in2)
-
-
 from concurrent.futures import ThreadPoolExecutor
 
 
@@ -366,7 +347,6 @@ def parallel_open_sessions(hostlist):
 
 
     return opened_list
-
 
 
 def close_sessions(hostlist):
@@ -432,7 +412,6 @@ def find_bios_settings(server, all_bios_settings):
                   f"'{server.manufacturer}/{server.arch}' in the BIOS settings file. Add this server's model.")
         return None
     # the '*' entry holds what every model of this manufacturer and architecture needs; the model's entry overrides it
-    wild = server.model not in arch
     base_settings = dict(arch.get('*') or {})
     base_settings.update(arch.get(server.model) or {})
 
@@ -455,7 +434,6 @@ def find_bios_settings(server, all_bios_settings):
             log.debug(f"{server.hostname}: {setting} is called {key} on this server")
         this_servers_settings[key] = value
     return this_servers_settings, unmatched
-
 
 
 def reset_bios(args, redfish_list):
@@ -722,7 +700,7 @@ def main():
     try:
         if args.diff:
             if len(redfish_list) != 2:
-                log.error(f"you must specify exactly 2 hosts to diff them")
+                log.error("you must specify exactly 2 hosts to diff them")
                 status = 1
             else:
                 different = bios_diff(redfish_list)

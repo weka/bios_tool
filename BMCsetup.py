@@ -110,7 +110,7 @@ def bmc_setup(host, user, password):
         # To effectively enable this service, you must ensure that 'ipmi' is selected in the '-ai' option of the 'users' command.
         ssh_sess.run("portcontrol -ipmi on") # lenovo
         # try to find our user id number - it doesn't take names
-        ssh_sess.run(f"users")
+        ssh_sess.run("users")
         user_id = lenovo_user_id(ssh_sess.output.stdout, user)
         if user_id is None:
             log.error(f"Lenovo server {host}: Unable to determine user_id")
