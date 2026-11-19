@@ -34,6 +34,7 @@ class FakeBMC:
         self.logged_out = False
         self.patch_status = 200
         self.post_status = 200
+        self.not_staged = set()     # settings the BMC accepts in a PATCH but silently drops
 
     def system(self):
         return self.docs[self.docs[self.docs[ROOT]["Systems"]["@odata.id"]]["Members"][0]["@odata.id"]]
@@ -57,7 +58,8 @@ class FakeBMC:
     def patch(self, uri, body):
         self.patches.append((uri, copy.deepcopy(body)))
         if self.patch_status < 300 and uri in self.docs:
-            self.docs[uri].setdefault("Attributes", {}).update(body.get("Attributes", {}))
+            kept = {key: value for key, value in body.get("Attributes", {}).items() if key not in self.not_staged}
+            self.docs[uri].setdefault("Attributes", {}).update(kept)
         return FakeResponse(self.patch_status)
 
     def post(self, uri, body):

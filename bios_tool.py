@@ -475,19 +475,20 @@ def check_and_fix(args, redfish_list, all_bios_settings):
         else:
             settings = wanted[server]
             log.info(f"Looking at {server.hostname}: {server.bmc.manufacturer}/{server.bmc.arch}/{server.bmc.model}:")
-            count = server.bmc.check_settings(settings)
-        #log.info(f"")
-        if count > 0:
-            log.info(f"{count} changes are needed on {server.hostname}")
+            changes, waiting = server.bmc.check_settings(settings)
+        if changes:
+            log.info(f"{len(changes)} changes are needed on {server.hostname}")
             hosts_needing_changes.append(server)
             if args.fix:
-                if server.bmc.change_settings(settings):
+                if server.bmc.change_settings(changes):
                     fixed_hosts.append(server)
                 else:
                     log.error(f"Unable to fix {server.hostname}")
                     failed = True
+        elif waiting:
+            log.info(f"{len(waiting)} changes on {server.hostname} are staged and wait for a reboot")
         else:
-            log.warning(f"No changes are needed on {server.hostname}")
+            log.info(f"No changes are needed on {server.hostname}")
         log.info("")
 
     if args.reboot and not args.dump:

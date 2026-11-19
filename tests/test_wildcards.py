@@ -7,7 +7,7 @@ SETTINGS = {"Dell Inc.": {"AMD": {
 
 
 def check(tool, model):
-    bmc = tool.add("10.0.0.1", make_bmc(dell(model=model)))
+    bmc = tool.add("10.0.0.1", make_bmc(dell(model=model, ProcVirtualization="Unset", SysProfile="Unset")))
     tool.settings(SETTINGS)
     tool.hosts([("10.0.0.1", "admin", "secret")])
     tool.run("--fix")

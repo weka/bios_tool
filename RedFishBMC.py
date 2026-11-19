@@ -21,6 +21,13 @@ def trim_supermicro_key(key):
     return key[:-5] if (key[-5] == "_" and is_hex(key[-4])) else key
 
 
+def same(a, b):
+    """Whether two BIOS values are equal, as BMCs and YAML spell them: "1" and 1, False and false."""
+    def norm(value):
+        return str(value).lower() if isinstance(value, bool) else str(value)
+    return norm(a) == norm(b)
+
+
 CPU_VENDOR_IDS = {"AuthenticAMD": "AMD", "GenuineIntel": "Intel"}
 CPU_NAME_HINTS = [("AMD", "AMD"), ("EPYC", "AMD"), ("INTEL", "Intel"), ("XEON", "Intel"),
                   ("AMPERE", "ARM"), ("NEOVERSE", "ARM"), ("GRACE", "ARM"), ("ARM", "ARM")]
@@ -172,63 +179,57 @@ class RedFishBMC(object):
         pass
 
     def change_settings(self, settings_dict):
-        #if self.vendor == "Supermicro":
-        #    settings_dict = self.adjust_supermicro_settings(settings_dict)
-        #    if settings_dict is None:
-        #        return False
-
-        # body = {'Attributes': {bios_property: property_value}}
-        body = dict()
-        body['Attributes'] = settings_dict
-
-        # We should fetch the SupportedApplyTimes attribute from the settings object to see if we need to set it...
+        """Stages settings_dict for the next reboot, and confirms the BMC staged every one of them."""
+        body = {'Attributes': settings_dict}
         if self.supported_apply_times is not None and "OnReset" in self.supported_apply_times:
             body["@Redfish.SettingsApplyTime"] = {"ApplyTime": "OnReset"}
 
-        # make sure a patch, which can take a lot of time, doesn't time out like a new connection
-        #self.redfish._timeout = None
         resp = self.redfish.patch(self.bios_settings_uri, body=body)
+        if resp.status not in [200, 201, 202, 204]:
+            messages = [info.get('Message', '') for info in
+                        resp.dict.get('error', {}).get('@Message.ExtendedInfo', [])]
+            log.error(f"{self.name} refused the BIOS changes (HTTP {resp.status}): {' '.join(messages)}")
+            return False
 
-        # If iLO responds with something outside of 200 or 201 then lets check the iLO extended info
-        # error message to see what went wrong
-        if resp.status == 400:
-            try:
-                print(json.dumps(resp.dict['error']['@Message.ExtendedInfo'], indent=4, sort_keys=True))
-            except Exception as exc:
-                log.error(f"A response exception occurred, unable to access Extended information {exc}")
-        elif resp.status not in [200,201,202]:
-            log.error("An http response of \'%s\' was returned.\n" % resp.status)
-        else:
-            # print("\nSuccess!\n")
-            log.info(f"Successfully set settings on host {self.name}; System reboot required")
+        staged = self.staged_settings()
+        if not staged:
+            log.warning(f"{self.name} accepted the BIOS changes but does not show what it staged, so they could not "
+                        f"be confirmed")
             return True
-
-        return False
+        not_staged = [f"{key}={value}" for key, value in settings_dict.items() if not same(staged.get(key), value)]
+        if not_staged:
+            log.error(f"{self.name} accepted the BIOS changes but did not stage {', '.join(not_staged)}")
+            return False
+        log.info(f"{self.name} staged {len(settings_dict)} BIOS changes; they apply at its next reboot")
+        return True
 
     def check_settings(self, settings):
-        if settings is None:
-            log.info(f"{self.name} There are no settings for this platform in the bios settings configuration file")
-            return 0
-
-        count = 0
+        """The settings that need changing, and those already staged and waiting for a reboot."""
+        current = self.bios_data.dict['Attributes']
+        staged = self.staged_settings()
+        to_change, waiting = dict(), dict()
         for key, value in settings.items():
-            if key not in self.bios_data.obj.Attributes:
+            if key not in current:
                 log.error(f"desired key ({key}) is not part of {self.name}'s bios!")
+            elif same(current[key], value):
+                continue
+            elif key in staged and same(staged[key], value):
+                log.info(f"{self.name}: BIOS setting {key} is {current[key]}, and {value} is waiting for a reboot")
+                waiting[key] = value
             else:
-                if self.bios_data.obj.Attributes[key] != value:
-                    log.info(f"{self.name}: BIOS setting {key} is {self.bios_data.obj.Attributes[key]}, " +
-                             f"but should be {value}")
-                    count += 1
+                log.info(f"{self.name}: BIOS setting {key} is {current[key]}, but should be {value}")
+                to_change[key] = value
+        return to_change, waiting
 
-        return count
+    def staged_settings(self):
+        """The BIOS settings staged on the BMC for the next reboot, or {} if it shows none."""
+        resp = self.redfish.get(self.bios_settings_uri)
+        return resp.dict.get('Attributes', {}) if resp.status == 200 else {}
 
     def pending_changes(self):
         """The BIOS settings staged on the BMC that differ from the current ones, applied at the next reboot."""
-        resp = self.redfish.get(self.bios_settings_uri)
-        if resp.status != 200:
-            return {}
         current = self.bios_data.dict['Attributes']
-        return {key: value for key, value in resp.dict.get('Attributes', {}).items() if current.get(key) != value}
+        return {key: value for key, value in self.staged_settings().items() if not same(current.get(key), value)}
 
     def reset_settings_to_default(self):
         resp = self.redfish.post(self.reset_bios_uri, body={})
