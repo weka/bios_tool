@@ -1,10 +1,10 @@
 import redfish
 
-from fake_bmc import FakeClient, dell, make_bmc
+from fake_bmc import FakeBMC, FakeClient, dell
 
 
 def test_ca_file_reaches_the_redfish_client(tool, monkeypatch):
-    bmc = tool.add("10.0.0.1", make_bmc(dell(LogicalProc="Disabled")))
+    bmc = tool.add("10.0.0.1", FakeBMC(dell(LogicalProc="Disabled")))
     seen = []
 
     def client(base_url, username=None, password=None, **kwargs):

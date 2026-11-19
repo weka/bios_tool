@@ -1,7 +1,7 @@
 import yaml
 
 from bios_tool import shareable
-from fake_bmc import dell, make_bmc
+from fake_bmc import FakeBMC, dell
 
 
 def test_shareable_drops_what_identifies_a_machine():
@@ -13,15 +13,14 @@ def test_shareable_drops_what_identifies_a_machine():
 
 
 def test_save_defaults_keeps_no_identifiers(tool):
-    tool.add("10.0.0.1", make_bmc(dell(SystemServiceTag="ABC1234", AssetTag="rack 4")))
-    tool.hosts([("10.0.0.1", "admin", "secret")])
+    tool.servers(None, dell(SystemServiceTag="ABC1234", AssetTag="rack 4"))
     assert tool.run("--save-defaults") == 0
     saved = yaml.safe_load((tool.dir / "defaults-db.yml").read_text())["Dell Inc."]["AMD"]["PowerEdge R6615"]
     assert "SystemServiceTag" not in saved and "AssetTag" not in saved and saved["LogicalProc"] == "Enabled"
 
 
 def test_bmc_ips_take_the_password_from_the_environment(tool, monkeypatch):
-    tool.add("10.0.0.1", make_bmc(dell(LogicalProc="Disabled")))
+    tool.add("10.0.0.1", FakeBMC(dell(LogicalProc="Disabled")))
     tool.settings({"Dell Inc.": {"AMD": {"PowerEdge R6615": {"LogicalProc": "Disabled"}}}})
     monkeypatch.setenv("BIOS_TOOL_BMC_PASSWORD", "secret")
     assert tool.run("--bmc-ips", "10.0.0.1", "--bmc-username", "admin") == 0

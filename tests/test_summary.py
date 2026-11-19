@@ -1,13 +1,10 @@
-from fake_bmc import dell, make_bmc, supermicro
+from fake_bmc import dell, supermicro
 
 SETTINGS = {"Dell Inc.": {"AMD": {"PowerEdge R6615": {"LogicalProc": "Disabled", "NoSuchSetting": "On"}}}}
 
 
 def test_the_summary_says_what_happened_to_each_server(tool, capsys):
-    tool.add("10.0.0.1", make_bmc(dell()))
-    clean = tool.add("10.0.0.2", make_bmc(dell(LogicalProc="Disabled")))
-    tool.settings(SETTINGS)
-    tool.hosts([("10.0.0.1", "admin", "secret"), ("10.0.0.2", "admin", "secret")])
+    _, clean = tool.servers(SETTINGS, dell(), dell(LogicalProc="Disabled"))
 
     assert tool.run("--fix", "--reboot", "--yes") == 1
 
@@ -18,10 +15,7 @@ def test_the_summary_says_what_happened_to_each_server(tool, capsys):
 
 
 def test_the_summary_names_unknown_servers_when_nothing_is_changed(tool, capsys):
-    tool.add("10.0.0.1", make_bmc(dell()))
-    tool.add("10.0.0.2", make_bmc(supermicro()))
-    tool.settings(SETTINGS)
-    tool.hosts([("10.0.0.1", "admin", "secret"), ("10.0.0.2", "admin", "secret")])
+    tool.servers(SETTINGS, dell(), supermicro())
 
     assert tool.run("--fix") == 1
 

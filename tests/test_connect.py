@@ -1,5 +1,5 @@
 import RedFishBMC
-from fake_bmc import FakeClient, dell, make_bmc, supermicro
+from fake_bmc import FakeBMC, FakeClient, dell, supermicro
 
 SMC = "/redfish/v1/Systems/1"
 SETTINGS = {"Supermicro": {"AMD": {"AS -1115CS-TNR": {"SMTControl": "Disabled"}},
@@ -7,9 +7,7 @@ SETTINGS = {"Supermicro": {"AMD": {"AS -1115CS-TNR": {"SMTControl": "Disabled"}}
 
 
 def one(tool, docs):
-    bmc = tool.add("10.0.0.1", make_bmc(docs))
-    tool.settings(SETTINGS)
-    tool.hosts([("10.0.0.1", "admin", "secret")])
+    [bmc] = tool.servers(SETTINGS, docs)
     return bmc
 
 
@@ -60,7 +58,7 @@ def test_a_bios_error_after_login_logs_out(tool):
 
 
 def test_reads_have_a_finite_timeout(monkeypatch):
-    bmc = make_bmc(dell())
+    bmc = FakeBMC(dell())
     client = FakeClient(bmc, "admin", "secret")
     monkeypatch.setattr(RedFishBMC.redfish, "redfish_client", lambda **kwargs: client)
     RedFishBMC.RedFishBMC("10.0.0.1", username="admin", password="secret")

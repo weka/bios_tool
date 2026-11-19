@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import bios_tool  # noqa: E402
-from fake_bmc import FakeClient  # noqa: E402
+from fake_bmc import FakeBMC, FakeClient  # noqa: E402
 
 
 class Tool:
@@ -18,6 +18,7 @@ class Tool:
 
     def __init__(self, tmp_path, monkeypatch, caplog):
         self.dir = tmp_path
+        self.monkeypatch = monkeypatch
         self.bmcs = {}
         self.caplog = caplog
         monkeypatch.chdir(tmp_path)
@@ -36,6 +37,16 @@ class Tool:
         self.bmcs[host] = bmc
         return bmc
 
+    def servers(self, settings, *bmcs):
+        """FakeBMCs (or their Redfish documents) at 10.0.0.1, 10.0.0.2, ..., listed in the host file, with the
+        settings file written unless settings is None."""
+        hosts = [f"10.0.0.{number}" for number in range(1, len(bmcs) + 1)]
+        bmcs = [self.add(host, bmc if isinstance(bmc, FakeBMC) else FakeBMC(bmc)) for host, bmc in zip(hosts, bmcs)]
+        if settings is not None:
+            self.settings(settings)
+        self.hosts([(host, "admin", "secret") for host in hosts])
+        return bmcs
+
     def settings(self, data):
         (self.dir / "bios_settings.yml").write_text(yaml.safe_dump(data) if not isinstance(data, str) else data)
 
@@ -45,7 +56,7 @@ class Tool:
 
     def run(self, *args):
         self.caplog.clear()
-        sys.argv = ["bios_tool"] + list(args)
+        self.monkeypatch.setattr(sys, "argv", ["bios_tool"] + list(args))
         try:
             bios_tool.main()
         except SystemExit as exc:

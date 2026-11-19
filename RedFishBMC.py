@@ -13,7 +13,7 @@ SETTINGS_OBJECTS = ("Settings", "SD", "Pending")    # Dell and HPE, Supermicro, 
 
 
 def ok(resp):
-    return resp.status in (200, 201, 202, 204)
+    return resp.status in (200, 201, 202, 203, 204)
 
 
 def same(a, b):
@@ -68,6 +68,8 @@ class RedFishBMC(object):
 
         # every later read gets READ_TIMEOUT, every write WRITE_TIMEOUT, so a BMC that stops answering cannot hang the run
         self.redfish._timeout = READ_TIMEOUT
+        self._staged = None         # the settings staged for the next reboot, as last read
+        self._needs_etag = False    # set once the BMC refuses a PATCH without If-Match (Supermicro)
         try:
             self._discover()
         except Exception:
@@ -80,20 +82,21 @@ class RedFishBMC(object):
         except Exception as exc:
             log.warning(f"Could not log out of {self.name}: {exc}")
 
+    def _members(self, collection_uri):
+        return [member['@odata.id'] for member in self.redfish.get(collection_uri).dict.get('Members', [])]
+
     def _only_member(self, collection_uri, what):
-        members = self.redfish.get(collection_uri).dict.get('Members', [])
+        members = self._members(collection_uri)
         if len(members) != 1:
             raise Exception(f"{self.name} has {len(members)} {what}s; bios_tool works with a BMC that has exactly one")
-        uri = members[0]['@odata.id']
-        return uri, self.redfish.get(uri)
+        return members[0]
 
     def _discover(self):
         root = self.redfish.root
         self.vendor = next(iter((root.get("Oem") or {}).keys()), None) or root.get("Vendor")
 
-        self.systems_members_uri, self.systems_members_response = self._only_member(root['Systems']['@odata.id'],
-                                                                                     "system")
-        system = self.systems_members_response.dict
+        self.systems_members_uri = self._only_member(root['Systems']['@odata.id'], "system")
+        system = self.redfish.get(self.systems_members_uri).dict
         self.manufacturer = system.get('Manufacturer')
         self.model = system.get('Model')
         self.bios_version = system.get('BiosVersion')
@@ -109,8 +112,8 @@ class RedFishBMC(object):
 
         self.arch = None
         processors = system.get('Processors', {}).get('@odata.id')
-        for member in self.redfish.get(processors).dict.get('Members', []) if processors else []:
-            self.arch = cpu_arch(self.redfish.get(member['@odata.id']).dict)
+        for member in self._members(processors) if processors else []:
+            self.arch = cpu_arch(self.redfish.get(member).dict)
             if self.arch is not None:
                 break
 
@@ -126,15 +129,11 @@ class RedFishBMC(object):
         self.supported_apply_times = settings.get('SupportedApplyTimes')
         self.bios_settings_uri = settings.get('SettingsObject', {}).get('@odata.id') or self._find_settings_object()
 
-        self.managers_members_uri = None
-        self.managers_members_response = None
+        managers = self._members(root['Managers']['@odata.id']) if 'Managers' in root else []
+        self.managers_members_uri = managers[0] if managers else None
         self.bmc_firmware_version = None
-        if 'Managers' in root:
-            members = self.redfish.get(root['Managers']['@odata.id']).dict.get('Members', [])
-            if members:
-                self.managers_members_uri = members[0]['@odata.id']
-                self.managers_members_response = self.redfish.get(self.managers_members_uri)
-                self.bmc_firmware_version = self.managers_members_response.dict.get('FirmwareVersion')
+        if self.managers_members_uri:
+            self.bmc_firmware_version = self.redfish.get(self.managers_members_uri).dict.get('FirmwareVersion')
 
     def _find_settings_object(self):
         """Where BIOS changes are staged, for a BMC whose BIOS resource does not say: the vendors' usual places."""
@@ -155,7 +154,7 @@ class RedFishBMC(object):
         if self.bios_settings_uri is None:
             log.error(f"{self.name} does not say where to stage BIOS changes, so they cannot be made")
             return False
-        on_reset = self.supported_apply_times is not None and "OnReset" in self.supported_apply_times
+        on_reset = "OnReset" in (self.supported_apply_times or [])
 
         resp = self._patch_settings(settings_dict, on_reset)
         if resp.status == 400 and on_reset:
@@ -167,28 +166,27 @@ class RedFishBMC(object):
         if resp.status >= 500 and len(settings_dict) > 1:
             # Supermicro fails the whole PATCH for one value it does not take, so find which
             log.info(f"{self.name} refused the BIOS changes (HTTP {resp.status}); trying them one at a time")
-            for key, value in settings_dict.items():
-                if not ok(self._patch_settings({key: value}, on_reset)):
-                    refused.append(f"{key}={value}")
+            refused = [key for key, value in settings_dict.items()
+                       if not ok(self._patch_settings({key: value}, on_reset))]
         elif not ok(resp):
             messages = [info.get('Message', '') for info in
                         resp.dict.get('error', {}).get('@Message.ExtendedInfo', [])]
             log.error(f"{self.name} refused the BIOS changes (HTTP {resp.status}): {' '.join(messages)}")
             return False
         if refused:
-            log.error(f"{self.name} refused {', '.join(refused)}")
+            log.error(f"{self.name} refused {', '.join(f'{key}={settings_dict[key]}' for key in refused)}")
         if len(refused) == len(settings_dict):
             return False
         if not on_reset and self.is_dell() and not self._create_dell_bios_job():
             return False
 
-        staged = self.staged_settings()
+        staged = self.staged_settings(refresh=True)
         if not staged:
             log.warning(f"{self.name} accepted the BIOS changes but does not show what it staged, so they could not "
                         f"be confirmed")
             return not refused
         not_staged = [f"{key}={value}" for key, value in settings_dict.items()
-                      if f"{key}={value}" not in refused and not same(staged.get(key), value)]
+                      if key not in refused and not same(staged.get(key), value)]
         if not_staged:
             log.error(f"{self.name} accepted the BIOS changes but did not stage {', '.join(not_staged)}")
             return False
@@ -200,18 +198,19 @@ class RedFishBMC(object):
         body = {'Attributes': attributes}
         if on_reset:
             body["@Redfish.SettingsApplyTime"] = {"ApplyTime": "OnReset"}
-        resp = self.redfish.patch(self.bios_settings_uri, body=body, timeout=WRITE_TIMEOUT)
-        if resp.status in (412, 428):
-            etag = self._settings_etag()
-            if etag:
-                resp = self.redfish.patch(self.bios_settings_uri, body=body, headers={"If-Match": etag},
-                                          timeout=WRITE_TIMEOUT)
+        resp = self._patch(body)
+        if resp.status in (412, 428) and not self._needs_etag:
+            self._needs_etag = True
+            resp = self._patch(body)
         return resp
 
-    def _settings_etag(self):
-        resp = self.redfish.get(self.bios_settings_uri)
-        header = resp.getheader("ETag") if hasattr(resp, "getheader") else None
-        return resp.dict.get("@odata.etag") or header
+    def _patch(self, body):
+        headers = None
+        if self._needs_etag:
+            resp = self._settings_object()
+            etag = resp and (resp.dict.get("@odata.etag") or resp.getheader("ETag"))
+            headers = {"If-Match": etag} if etag else None
+        return self.redfish.patch(self.bios_settings_uri, body=body, headers=headers, timeout=WRITE_TIMEOUT)
 
     def is_dell(self):
         return self.vendor == "Dell" or str(self.manufacturer).startswith("Dell")
@@ -236,14 +235,11 @@ class RedFishBMC(object):
     def check_settings(self, settings):
         """The settings that need changing, and those already staged and waiting for a reboot."""
         current = self.bios_data.dict['Attributes']
-        staged = self.staged_settings()
+        differ = {key: value for key, value in settings.items() if not same(current[key], value)}
+        staged = self.staged_settings() if differ else {}
         to_change, waiting = dict(), dict()
-        for key, value in settings.items():
-            if key not in current:
-                log.error(f"desired key ({key}) is not part of {self.name}'s bios!")
-            elif same(current[key], value):
-                continue
-            elif key in staged and same(staged[key], value):
+        for key, value in differ.items():
+            if key in staged and same(staged[key], value):
                 log.info(f"{self.name}: BIOS setting {key} is {current[key]}, and {value} is waiting for a reboot")
                 waiting[key] = value
             else:
@@ -251,16 +247,23 @@ class RedFishBMC(object):
                 to_change[key] = value
         return to_change, waiting
 
-    def staged_settings(self):
-        """The BIOS settings staged on the BMC for the next reboot, or {} if it shows none."""
+    def _settings_object(self):
+        """The response for the settings object, or None if it cannot be read."""
         if self.bios_settings_uri is None:
-            return {}
+            return None
         try:
             resp = self.redfish.get(self.bios_settings_uri)
         except Exception as exc:
             log.warning(f"Could not read the BIOS changes staged on {self.name}: {exc}")
-            return {}
-        return resp.dict.get('Attributes', {}) if resp.status == 200 else {}
+            return None
+        return resp if resp.status == 200 else None
+
+    def staged_settings(self, refresh=False):
+        """The BIOS settings staged on the BMC for the next reboot, or {} if it shows none."""
+        if refresh or self._staged is None:
+            resp = self._settings_object()
+            self._staged = resp.dict.get('Attributes', {}) if resp else {}
+        return self._staged
 
     def pending_changes(self):
         """The BIOS settings staged on the BMC that differ from the current ones, applied at the next reboot."""
@@ -276,19 +279,17 @@ class RedFishBMC(object):
         except Exception as exc:
             log.error(f"{self.name} could not be asked to reset its BIOS: {exc}")
             return False
-        if resp.status not in [200,201,202,203,204]:
+        if not ok(resp):
             log.error(f"{self.name} refused to reset its BIOS to defaults (HTTP {resp.status}) at {self.reset_bios_uri}")
             return False
-        else:
-            return True
+        return True
 
     def print_settings(self):
         print(f"{self.name} Current BIOS settings:")
         print(json.dumps(self.bios_data.obj.Attributes, indent=4, sort_keys=True))
 
     def reboot(self):
-        action = self.reset_target
-        if action is None:
+        if self.reset_target is None:
             log.error(f"{self.name} does not offer a way to reboot it")
             return False
         try:
@@ -301,11 +302,11 @@ class RedFishBMC(object):
                 reset_type = 'ForceRestart'
             else:
                 reset_type = 'On'
-            resp = self.redfish.post(action, body={'ResetType': reset_type}, timeout=WRITE_TIMEOUT)
+            resp = self.redfish.post(self.reset_target, body={'ResetType': reset_type}, timeout=WRITE_TIMEOUT)
         except Exception as exc:
             log.error(f"{self.name} could not be asked to reboot: {exc}")
             return False
-        if resp.status not in [200, 201, 202, 203, 204]:
+        if not ok(resp):
             log.error(f"{self.name} refused to reboot ({reset_type}): HTTP {resp.status}")
             return False
         log.info(f"{self.name} accepted a {reset_type}")
