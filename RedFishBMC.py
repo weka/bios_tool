@@ -65,7 +65,7 @@ def trim_supermicro_dict(settings_dict):
 
 
 class RedFishBMC(object):
-    def __init__(self, hostname, username=None, password=None):
+    def __init__(self, hostname, username=None, password=None, ca_file=None):
         # create the redfish object
         self.cdrom_eject_uri = None
         self.cdrom_mount_uri = None
@@ -75,7 +75,8 @@ class RedFishBMC(object):
         self.virtual_media_data = None
         self.virtual_media_uri = None
         self.redfish = redfish.redfish_client(base_url="https://" + hostname, username=username, password=password,
-                                              default_prefix='/redfish/v1', timeout=10, max_retry=2)
+                                              default_prefix='/redfish/v1', timeout=10, max_retry=2,
+                                              cafile=ca_file)
 
         # login
         self.name = hostname

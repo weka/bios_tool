@@ -18,7 +18,8 @@ from tabulate import tabulate
 log = logging.getLogger()
 
 class Server(object):
-    def __init__(self, hostname, username, password):
+    def __init__(self, hostname, username, password, ca_file=None):
+        self.ca_file = ca_file
         self.hostname = hostname
         self.username = username
         self.password = password
@@ -32,7 +33,7 @@ class Server(object):
     def connect(self):
         try:
             # need to add a timeout here...
-            self.bmc = RedFishBMC(self.hostname, username=self.username, password=self.password)
+            self.bmc = RedFishBMC(self.hostname, username=self.username, password=self.password, ca_file=self.ca_file)
             self.bios_settings = self.bmc.get_bios_settings()
             self.manufacturer = self.bmc.manufacturer
             self.arch = self.bmc.arch
@@ -611,6 +612,9 @@ def main():
     parser.add_argument("--bmc-password", dest="bmc_password", type=str, nargs=1,
                         help="a password to use on all hosts in --bmc-ips; visible to other users in ps and in "
                              "shell history, so prefer $BIOS_TOOL_BMC_PASSWORD or the prompt", default=None)
+    parser.add_argument("--ca-file", dest="ca_file", default=None,
+                        help="check each BMC's TLS certificate against the CA certificates in this file; by default "
+                             "certificates are not checked, as most BMCs' are self-signed")
     parser.add_argument("-v", "--verbose", dest='verbosity', action='store_true', help="enable verbose mode")
 
     args = parser.parse_args()
@@ -647,7 +651,9 @@ def main():
     # create objects from the config in the input file or command-line
     servers_list = list()
     for host in hosts:   # host is a dict, {name, user, password}
-        servers_list.append(Server(host['name'], host['user'], host['password']))
+        servers_list.append(Server(host['name'], host['user'], host['password'], ca_file=args.ca_file))
+    if args.ca_file is None:
+        log.info("BMC certificates are not checked; give --ca-file to check them")
 
     # did the user ask us to make sure the BMC is set with ipmi over lan and redfish, etc?
     if args.bmc_config:
