@@ -35,6 +35,8 @@ class FakeBMC:
         self.patch_status = 200
         self.post_status = 200
         self.not_staged = set()     # settings the BMC accepts in a PATCH but silently drops
+        self.patch_hook = None      # (uri, body, headers) -> an HTTP status that overrides patch_status, or None
+        self.headers = []           # the headers of each PATCH
 
     def system(self):
         return self.docs[self.docs[self.docs[ROOT]["Systems"]["@odata.id"]]["Members"][0]["@odata.id"]]
@@ -55,14 +57,20 @@ class FakeBMC:
                                                 "@Message.ExtendedInfo": [{"Message": f"{uri} not found"}]}})
         return FakeResponse(200, copy.deepcopy(self.docs[uri]))
 
-    def patch(self, uri, body):
+    def patch(self, uri, body, headers=None):
         if self.patch_status is None:
             raise ConnectionError("the BMC stopped answering")
         self.patches.append((uri, copy.deepcopy(body)))
-        if self.patch_status < 300 and uri in self.docs:
+        self.headers.append(headers or {})
+        status = self.patch_status
+        if self.patch_hook is not None:
+            status = self.patch_hook(uri, body, headers or {}) or status
+        if status >= 300:
+            return FakeResponse(status)
+        if uri in self.docs:
             kept = {key: value for key, value in body.get("Attributes", {}).items() if key not in self.not_staged}
             self.docs[uri].setdefault("Attributes", {}).update(kept)
-        return FakeResponse(self.patch_status)
+        return FakeResponse(status)
 
     def post(self, uri, body):
         self.posts.append((uri, copy.deepcopy(body)))
@@ -93,8 +101,8 @@ class FakeClient:
     def get(self, uri, *args, **kwargs):
         return self.bmc.get(uri)
 
-    def patch(self, uri, body=None, *args, **kwargs):
-        return self.bmc.patch(uri, body or {})
+    def patch(self, uri, body=None, headers=None, **kwargs):
+        return self.bmc.patch(uri, body or {}, headers)
 
     def post(self, uri, body=None, *args, **kwargs):
         return self.bmc.post(uri, body or {})

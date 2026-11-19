@@ -26,6 +26,10 @@ WRITE_TIMEOUT = 300
 SETTINGS_OBJECTS = ("Settings", "SD", "Pending")    # Dell and HPE, Supermicro, Lenovo
 
 
+def ok(resp):
+    return resp.status in (200, 201, 202, 204)
+
+
 def same(a, b):
     """Whether two BIOS values are equal, as BMCs and YAML spell them: "1" and 1, False and false."""
     def norm(value):
@@ -151,12 +155,14 @@ class RedFishBMC(object):
         self.supported_apply_times = settings.get('SupportedApplyTimes')
         self.bios_settings_uri = settings.get('SettingsObject', {}).get('@odata.id') or self._find_settings_object()
 
+        self.managers_members_uri = None
         self.managers_members_response = None
         self.bmc_firmware_version = None
         if 'Managers' in root:
             members = self.redfish.get(root['Managers']['@odata.id']).dict.get('Members', [])
             if members:
-                self.managers_members_response = self.redfish.get(members[0]['@odata.id'])
+                self.managers_members_uri = members[0]['@odata.id']
+                self.managers_members_response = self.redfish.get(self.managers_members_uri)
                 self.bmc_firmware_version = self.managers_members_response.dict.get('FirmwareVersion')
 
     def _find_settings_object(self):
@@ -198,31 +204,86 @@ class RedFishBMC(object):
 
     def change_settings(self, settings_dict):
         """Stages settings_dict for the next reboot, and confirms the BMC staged every one of them."""
-        body = {'Attributes': settings_dict}
-        if self.supported_apply_times is not None and "OnReset" in self.supported_apply_times:
-            body["@Redfish.SettingsApplyTime"] = {"ApplyTime": "OnReset"}
-
         if self.bios_settings_uri is None:
             log.error(f"{self.name} does not say where to stage BIOS changes, so they cannot be made")
             return False
-        resp = self.redfish.patch(self.bios_settings_uri, body=body, timeout=WRITE_TIMEOUT)
-        if resp.status not in [200, 201, 202, 204]:
+        on_reset = self.supported_apply_times is not None and "OnReset" in self.supported_apply_times
+
+        resp = self._patch_settings(settings_dict, on_reset)
+        if resp.status == 400 and on_reset:
+            # some iDRAC firmware refuses the annotation it advertises
+            log.info(f"{self.name} refused the apply time; trying again without it")
+            on_reset = False
+            resp = self._patch_settings(settings_dict, on_reset)
+        refused = []
+        if resp.status >= 500 and len(settings_dict) > 1:
+            # Supermicro fails the whole PATCH for one value it does not take, so find which
+            log.info(f"{self.name} refused the BIOS changes (HTTP {resp.status}); trying them one at a time")
+            for key, value in settings_dict.items():
+                if not ok(self._patch_settings({key: value}, on_reset)):
+                    refused.append(f"{key}={value}")
+        elif not ok(resp):
             messages = [info.get('Message', '') for info in
                         resp.dict.get('error', {}).get('@Message.ExtendedInfo', [])]
             log.error(f"{self.name} refused the BIOS changes (HTTP {resp.status}): {' '.join(messages)}")
+            return False
+        if refused:
+            log.error(f"{self.name} refused {', '.join(refused)}")
+        if len(refused) == len(settings_dict):
+            return False
+        if not on_reset and self.is_dell() and not self._create_dell_bios_job():
             return False
 
         staged = self.staged_settings()
         if not staged:
             log.warning(f"{self.name} accepted the BIOS changes but does not show what it staged, so they could not "
                         f"be confirmed")
-            return True
-        not_staged = [f"{key}={value}" for key, value in settings_dict.items() if not same(staged.get(key), value)]
+            return not refused
+        not_staged = [f"{key}={value}" for key, value in settings_dict.items()
+                      if f"{key}={value}" not in refused and not same(staged.get(key), value)]
         if not_staged:
             log.error(f"{self.name} accepted the BIOS changes but did not stage {', '.join(not_staged)}")
             return False
-        log.info(f"{self.name} staged {len(settings_dict)} BIOS changes; they apply at its next reboot")
-        return True
+        log.info(f"{self.name} staged {len(settings_dict) - len(refused)} BIOS changes; they apply at its next reboot")
+        return not refused
+
+    def _patch_settings(self, attributes, on_reset):
+        """PATCHes attributes to the settings object; with the object's ETag if the BMC demands one (Supermicro)."""
+        body = {'Attributes': attributes}
+        if on_reset:
+            body["@Redfish.SettingsApplyTime"] = {"ApplyTime": "OnReset"}
+        resp = self.redfish.patch(self.bios_settings_uri, body=body, timeout=WRITE_TIMEOUT)
+        if resp.status in (412, 428):
+            etag = self._settings_etag()
+            if etag:
+                resp = self.redfish.patch(self.bios_settings_uri, body=body, headers={"If-Match": etag},
+                                          timeout=WRITE_TIMEOUT)
+        return resp
+
+    def _settings_etag(self):
+        resp = self.redfish.get(self.bios_settings_uri)
+        header = resp.getheader("ETag") if hasattr(resp, "getheader") else None
+        return resp.dict.get("@odata.etag") or header
+
+    def is_dell(self):
+        return self.vendor == "Dell" or str(self.manufacturer).startswith("Dell")
+
+    def _create_dell_bios_job(self):
+        """Without an apply time, iDRAC applies staged BIOS changes only through a configuration job."""
+        if self.managers_members_uri is None:
+            log.error(f"{self.name} has no manager to create the BIOS job on, so the changes will not be applied")
+            return False
+        body = {"TargetSettingsURI": self.bios_settings_uri}
+        for jobs in (f"{self.managers_members_uri}/Jobs", f"{self.managers_members_uri}/Oem/Dell/Jobs"):
+            resp = self.redfish.post(jobs, body=body, timeout=WRITE_TIMEOUT)
+            if ok(resp):
+                log.info(f"{self.name} has a BIOS configuration job to apply the changes at its next reboot")
+                return True
+            if resp.status != 404:
+                break
+        log.error(f"{self.name} did not create the BIOS configuration job (HTTP {resp.status}), so the changes will "
+                  f"not be applied at its next reboot")
+        return False
 
     def check_settings(self, settings):
         """The settings that need changing, and those already staged and waiting for a reboot."""
