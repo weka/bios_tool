@@ -10,7 +10,7 @@ import yaml
 from redfish.rest.v1 import RetriesExhaustedError
 
 from wekapyutils.wekalogging import configure_logging, register_module
-from RedFishBMC import RedFishBMC
+from RedFishBMC import RedFishBMC, same
 from BMCsetup import bmc_setup, get_ipmi_ip
 from tabulate import tabulate
 
@@ -213,18 +213,18 @@ def save_bmc_db(redfish_list, defaults_database, force=False):
 
 # Generate the bios defs for a server model so we can later set the values on new servers
 def diff_defaults(defaults_database, redfish_list):
-    bmc_db = None
+    """Prints, per model, the settings that differ from its factory defaults. False if a server was skipped."""
     custom_settings = dict()
+    shown_by = dict()
+    skipped = 0
     try:
         bmc_db = load_yaml(defaults_database)
-    except FileNotFoundError: # it's ok if it doesn't exist - we'll create it
-        log.info(f"Bios database {defaults_database} does not exist, creating")
+    except FileNotFoundError:
+        log.error(f"There is no defaults database {defaults_database}: record one with --save-defaults")
+        return False
     except Exception as exc:
         log.error(f"Database file {defaults_database} file: {exc}")
         return False
-
-    if bmc_db is None:
-        bmc_db = dict()
 
     for server in redfish_list:
         manufacturer = server.bmc.manufacturer
@@ -232,17 +232,11 @@ def diff_defaults(defaults_database, redfish_list):
         arch = server.bmc.arch
         bios_settings = shareable(server.bmc.bios_data.dict['Attributes'])  # bios settings on the target server
 
-        if manufacturer not in bmc_db:
-            log.error(f"There are no default settings for {manufacturer}")
-            return False
-        if arch not in bmc_db[manufacturer]:
-            log.error(f"There are no default settings for {manufacturer}/{arch}")
-            return False
-        if model not in bmc_db[manufacturer][arch]:
-            log.error(f"There are no default settings for {manufacturer}/{arch}/{model}")
-            return False
-
-        defaults = bmc_db[manufacturer][arch][model]
+        defaults = bmc_db.get(manufacturer, {}).get(arch, {}).get(model)
+        if defaults is None:
+            log.error(f"{server.hostname} is skipped: there are no default settings for {manufacturer}/{arch}/{model}")
+            skipped += 1
+            continue
 
         # make a list of setting that differ on this server compared to factory defaults
         log.info(f"Looking at defaults for {server.hostname}: {manufacturer}/{arch}/{model}:")
@@ -253,7 +247,7 @@ def diff_defaults(defaults_database, redfish_list):
                 log.warning(f"{server.hostname} is missing setting for {manufacturer}/{arch}/{model}/{setting} - ???")
                 missing_settings += 1
             else:
-                if bios_settings[setting] != defaults[setting]:
+                if not same(bios_settings[setting], defaults[setting]):
                     log.info(f'Setting: {setting} differs from default: {bios_settings[setting]}')
                     bios_differences[setting] = bios_settings[setting]
 
@@ -264,11 +258,13 @@ def diff_defaults(defaults_database, redfish_list):
             log.error(f"Server {server.bmc.name}'s default definition is incorrect or incomplete, and shows no bios_differences")
             continue
 
-        if manufacturer not in custom_settings:
-            custom_settings[manufacturer] = dict()
-        if arch not in custom_settings[manufacturer]:
-            custom_settings[manufacturer][arch] = dict()
-        custom_settings[manufacturer][arch][model] = bios_differences
+        models = custom_settings.setdefault(manufacturer, dict()).setdefault(arch, dict())
+        if model not in models:
+            models[model] = bios_differences
+            shown_by[(manufacturer, arch, model)] = server.hostname
+        elif models[model] != bios_differences:
+            log.warning(f"{server.hostname} differs from the defaults in other ways than "
+                        f"{shown_by[(manufacturer, arch, model)]}, the {model} shown below")
 
     if len(custom_settings) == 0:
         log.info("None of the servers have non-default settings")
@@ -276,7 +272,7 @@ def diff_defaults(defaults_database, redfish_list):
         print()
         print("Bios Differences (Edit these before adding to the bios_settings file):")
         print(yaml.dump(custom_settings))
-    return True
+    return skipped == 0
 
 
 def bios_diff(hostlist):
@@ -384,8 +380,8 @@ def match_setting(name, bios_keys):
     Hyper_Threading_ALL_). Each step is taken only if it finds exactly one setting."""
     if name in bios_keys:
         return name, []
-    for same in (trim_trailing_hex, lambda key: squash(trim_trailing_hex(key))):
-        candidates = [key for key in bios_keys if same(key) == same(name)]
+    for normalise in (trim_trailing_hex, lambda key: squash(trim_trailing_hex(key))):
+        candidates = [key for key in bios_keys if normalise(key) == normalise(name)]
         if len(candidates) == 1:
             return candidates[0], []
         if candidates:
