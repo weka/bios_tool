@@ -331,17 +331,20 @@ def trim_trailing_hex(s):
 # If there is no match for the server model, try finding one that matches closely?
 from rapidfuzz import process, fuzz
 def find_bios_settings(server, all_bios_settings, force=False):
-    if server.manufacturer in all_bios_settings:
-        mfg = all_bios_settings[server.manufacturer]
-    else:
-        log.error(f"Server {server.hostname}: Unknown manufacturer: {server.manufacturer}.  Aborting.")
+    platform = f"{server.manufacturer}/{server.arch}/{server.model}"
+    if server.manufacturer not in all_bios_settings:
+        log.error(f"{server.hostname} is a {platform}: there is no '{server.manufacturer}' manufacturer in the BIOS "
+                  f"settings file. Add it, with this server's architecture and model.")
         return None
-    if server.arch in mfg:
-        arch = mfg[server.arch]
-    else:
-        log.error(f"Server {server.hostname}: Unknown processor architecture: {server.arch}.  Aborting.")
+    mfg = all_bios_settings[server.manufacturer]
+    if server.arch not in mfg:
+        log.error(f"{server.hostname} is a {platform}: there is no '{server.arch}' architecture under "
+                  f"'{server.manufacturer}' in the BIOS settings file. Add it, with this server's model.")
         return None
+    arch = mfg[server.arch]
     if server.model not in arch and '*' not in arch:
+        log.error(f"{server.hostname} is a {platform}: there is no '{server.model}' model, and no '*', under "
+                  f"'{server.manufacturer}/{server.arch}' in the BIOS settings file. Add this server's model.")
         return None
     # the '*' entry holds what every model of this manufacturer and architecture needs; the model's entry overrides it
     wild = server.model not in arch
@@ -546,13 +549,27 @@ def main():
         hosts_needing_changes = list()
         fixed_hosts = list()
         systems_rebooted = list()
+        # every host's settings are found before any host is changed, so an unknown server stops the run cleanly
+        wanted = dict()
+        unknown = list()
+        if not args.dump:
+            for server in redfish_list:
+                wanted[server] = find_bios_settings(server, all_bios_settings)
+                if wanted[server] is None:
+                    unknown.append(server)
+        if unknown and (args.fix or args.reboot):
+            log.error(f"No server was changed: {len(unknown)} of them are not in {args.bios}.")
+            close_sessions(redfish_list)
+            sys.exit(1)
         # Loop through the servers
         for server in redfish_list:
             if args.dump:
                 server.bmc.print_settings()
                 continue
+            elif server in unknown:
+                continue
             else:
-                settings = find_bios_settings(server, all_bios_settings)
+                settings = wanted[server]
                 log.info(f"Looking at {server.hostname}: {server.bmc.manufacturer}/{server.bmc.arch}/{server.bmc.model}:")
                 count = server.bmc.check_settings(settings)
             #log.info(f"")
@@ -585,6 +602,10 @@ def main():
                 log.info(f"{len(fixed_hosts)} have been modified.  Please reboot them to activate changes.")
             else:
                 log.info(f"{len(systems_rebooted)} have been successfully modified and rebooted.")
+        if unknown:
+            log.error(f"{len(unknown)} servers are not in {args.bios} and were not checked.")
+            close_sessions(redfish_list)
+            sys.exit(1)
 
     close_sessions(redfish_list)
 
