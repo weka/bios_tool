@@ -472,23 +472,27 @@ def check_and_fix(args, redfish_list, all_bios_settings):
             continue
         elif server in unknown:
             continue
-        else:
-            settings = wanted[server]
-            log.info(f"Looking at {server.hostname}: {server.bmc.manufacturer}/{server.bmc.arch}/{server.bmc.model}:")
+        settings = wanted[server]
+        log.info(f"Looking at {server.hostname}: {server.bmc.manufacturer}/{server.bmc.arch}/{server.bmc.model}:")
+        # one BMC failing is reported, and the others are still checked and fixed
+        try:
             changes, waiting = server.bmc.check_settings(settings)
-        if changes:
-            log.info(f"{len(changes)} changes are needed on {server.hostname}")
-            hosts_needing_changes.append(server)
-            if args.fix:
-                if server.bmc.change_settings(changes):
-                    fixed_hosts.append(server)
-                else:
-                    log.error(f"Unable to fix {server.hostname}")
-                    failed = True
-        elif waiting:
-            log.info(f"{len(waiting)} changes on {server.hostname} are staged and wait for a reboot")
-        else:
-            log.info(f"No changes are needed on {server.hostname}")
+            if changes:
+                log.info(f"{len(changes)} changes are needed on {server.hostname}")
+                hosts_needing_changes.append(server)
+                if args.fix:
+                    if server.bmc.change_settings(changes):
+                        fixed_hosts.append(server)
+                    else:
+                        log.error(f"Unable to fix {server.hostname}")
+                        failed = True
+            elif waiting:
+                log.info(f"{len(waiting)} changes on {server.hostname} are staged and wait for a reboot")
+            else:
+                log.info(f"No changes are needed on {server.hostname}")
+        except Exception as exc:
+            log.error(f"{server.hostname} failed: {exc}")
+            failed = True
         log.info("")
 
     if args.reboot and not args.dump:

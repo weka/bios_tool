@@ -1,6 +1,6 @@
 import pytest
 
-import RedFishBMC
+import bios_tool
 from fake_bmc import INTEL_CPU, dell, make_bmc
 
 SETTINGS = {"Dell Inc.": {"AMD": {"PowerEdge R6615": {"LogicalProc": "Disabled"}}}}
@@ -50,10 +50,10 @@ def test_sessions_are_closed_even_when_something_goes_wrong(tool, monkeypatch):
     bmc = tool.add("10.0.0.1", make_bmc(dell()))
     hosts(tool, "10.0.0.1")
 
-    def broken(self, settings):
+    def broken(server, all_bios_settings):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(RedFishBMC.RedFishBMC, "check_settings", broken)
+    monkeypatch.setattr(bios_tool, "find_bios_settings", broken)
     with pytest.raises(RuntimeError):
         tool.run()
     assert bmc.logged_out
