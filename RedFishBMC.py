@@ -10,6 +10,7 @@ log = getLogger(__name__)
 READ_TIMEOUT = 60
 WRITE_TIMEOUT = 300
 SETTINGS_OBJECTS = ("Settings", "SD", "Pending")    # Dell and HPE, Supermicro, Lenovo
+WAITING_JOB_STATES = {"New", "Scheduled", "Scheduling", "Waiting", "ReadyForExecution", "Running"}   # iDRAC jobs
 
 
 def ok(resp):
@@ -177,7 +178,7 @@ class RedFishBMC(object):
             log.error(f"{self.name} refused {', '.join(f'{key}={settings_dict[key]}' for key in refused)}")
         if len(refused) == len(settings_dict):
             return False
-        if not on_reset and self.is_dell() and not self._create_dell_bios_job():
+        if not on_reset and not self.ensure_bios_job():
             return False
 
         staged = self.staged_settings(refresh=True)
@@ -214,6 +215,27 @@ class RedFishBMC(object):
 
     def is_dell(self):
         return self.vendor == "Dell" or str(self.manufacturer).startswith("Dell")
+
+    def ensure_bios_job(self):
+        """Makes sure a Dell has a BIOS configuration job to apply its staged settings at the next reboot: without one,
+        iDRAC leaves them staged. Other BMCs need none."""
+        if not self.is_dell() or self._dell_bios_job_waiting():
+            return True
+        return self._create_dell_bios_job()
+
+    def _dell_bios_job_waiting(self):
+        if self.managers_members_uri is None:
+            return False
+        try:
+            jobs = self.redfish.get(f"{self.managers_members_uri}/Jobs?$expand=*($levels=1)").dict.get('Members', [])
+            for job in jobs:
+                if 'JobState' not in job:
+                    job = self.redfish.get(job['@odata.id']).dict
+                if job.get('JobType') == 'BIOSConfiguration' and job.get('JobState') in WAITING_JOB_STATES:
+                    return True
+        except Exception as exc:
+            log.warning(f"Could not read the job queue of {self.name}: {exc}")
+        return False
 
     def _create_dell_bios_job(self):
         """Without an apply time, iDRAC applies staged BIOS changes only through a configuration job."""

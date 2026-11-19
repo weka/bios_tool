@@ -166,6 +166,7 @@ def shareable(settings):
             if key not in IDENTIFYING_SETTINGS and not MAC_ADDRESS.search(str(value)) and not MAC_IN_NAME.search(key)}
 
 def save_bmc_db(redfish_list, defaults_database, force=False):
+    """Records each server's settings in the defaults database. False if the database could not be read."""
     bmc_db = None
     changes_made = False
     try:
@@ -197,7 +198,7 @@ def save_bmc_db(redfish_list, defaults_database, force=False):
             f.write('# This should contain the default/factory reset values\n')
             yaml.dump(bmc_db, f, default_flow_style=False)
 
-    return changes_made
+    return True
 
 # Generate the bios defs for a server model so we can later set the values on new servers
 def diff_defaults(defaults_database, redfish_list):
@@ -481,6 +482,9 @@ def check_and_fix(args, redfish_list, all_bios_settings):
             if waiting:
                 log.info(f"{len(waiting)} changes on {server.hostname} are staged and wait for a reboot")
                 results[server].append(f"{len(waiting)} settings staged earlier")
+                if (args.fix or args.reboot) and not server.bmc.ensure_bios_job():
+                    results[server].append("no BIOS job to apply them")
+                    failed = True
             if not changes and not waiting:
                 log.info(f"No changes are needed on {server.hostname}")
                 results[server].append("as wanted")
@@ -694,8 +698,7 @@ def main():
         elif args.reset_bios:
             status = reset_bios(args, redfish_list)
         elif args.save:
-            save_bmc_db(redfish_list, args.defaults_database, force=args.force)
-            status = 0
+            status = 0 if save_bmc_db(redfish_list, args.defaults_database, force=args.force) else 1
         elif args.dump:
             for server in redfish_list:
                 server.bmc.print_settings()

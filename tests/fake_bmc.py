@@ -45,7 +45,7 @@ class FakeBMC:
         return [body.get("ResetType") for body in self.posts_to("ComputerSystem.Reset")]
 
     def get(self, uri):
-        uri = uri.rstrip("/") or ROOT
+        uri = uri.split("?", 1)[0].rstrip("/") or ROOT
         if uri not in self.docs:
             return response(404, {"error": {"code": "Base.1.0.ResourceMissingAtURI",
                                                 "@Message.ExtendedInfo": [{"Message": f"{uri} not found"}]}})
