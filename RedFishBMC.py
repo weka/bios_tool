@@ -245,7 +245,11 @@ class RedFishBMC(object):
         """The BIOS settings staged on the BMC for the next reboot, or {} if it shows none."""
         if self.bios_settings_uri is None:
             return {}
-        resp = self.redfish.get(self.bios_settings_uri)
+        try:
+            resp = self.redfish.get(self.bios_settings_uri)
+        except Exception as exc:
+            log.warning(f"Could not read the BIOS changes staged on {self.name}: {exc}")
+            return {}
         return resp.dict.get('Attributes', {}) if resp.status == 200 else {}
 
     def pending_changes(self):
@@ -257,7 +261,11 @@ class RedFishBMC(object):
         if self.reset_bios_uri is None:
             log.error(f"{self.name} does not offer a BIOS reset to defaults")
             return False
-        resp = self.redfish.post(self.reset_bios_uri, body={}, timeout=WRITE_TIMEOUT)
+        try:
+            resp = self.redfish.post(self.reset_bios_uri, body={}, timeout=WRITE_TIMEOUT)
+        except Exception as exc:
+            log.error(f"{self.name} could not be asked to reset its BIOS: {exc}")
+            return False
         if resp.status not in [200,201,202,203,204]:
             error_dict = resp.dict['error'] if 'error' in resp.dict else None
             log.error(f"An http response of '{resp.status}' was returned attempting to reset bios to default on {self.name}.")
@@ -275,25 +283,25 @@ class RedFishBMC(object):
         if action is None:
             log.error(f"{self.name} does not offer a way to reboot it")
             return False
-        # print(json.dumps(self.systems_members_response.obj.Actions['#ComputerSystem.Reset']))
-        body = dict()
-        if self.systems_members_response.obj.PowerState != "On":
-            body['ResetType'] = 'On'
-        else:
-            if 'GracefulRestart' in self.system_reset_types:
-                body['ResetType'] = 'GracefulRestart'
+        try:
+            power_state = self.redfish.get(self.systems_members_uri).dict.get('PowerState')
+            if power_state != "On":
+                reset_type = 'On'
+            elif 'GracefulRestart' in self.system_reset_types:
+                reset_type = 'GracefulRestart'
             elif 'ForceRestart' in self.system_reset_types:
-                body['ResetType'] = 'ForceRestart'
+                reset_type = 'ForceRestart'
             else:
-                body['ResetType'] = 'On'
-
-        resp = self.redfish.post(action, body=body, timeout=WRITE_TIMEOUT)
-        print(f'reset status: {resp.status}')
-        if resp.status not in [200,201,202,203,204]:
-            log.error(f"An http response of '{resp.status}' was returned attempting to reboot {self.name}.\n")
+                reset_type = 'On'
+            resp = self.redfish.post(action, body={'ResetType': reset_type}, timeout=WRITE_TIMEOUT)
+        except Exception as exc:
+            log.error(f"{self.name} could not be asked to reboot: {exc}")
             return False
-        else:
-            return True
+        if resp.status not in [200, 201, 202, 203, 204]:
+            log.error(f"{self.name} refused to reboot ({reset_type}): HTTP {resp.status}")
+            return False
+        log.info(f"{self.name} accepted a {reset_type}")
+        return True
 
     def adjust_supermicro_settings(self, settings_dict):
         new_settings_dict = dict()

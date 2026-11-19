@@ -56,6 +56,8 @@ class FakeBMC:
         return FakeResponse(200, copy.deepcopy(self.docs[uri]))
 
     def patch(self, uri, body):
+        if self.patch_status is None:
+            raise ConnectionError("the BMC stopped answering")
         self.patches.append((uri, copy.deepcopy(body)))
         if self.patch_status < 300 and uri in self.docs:
             kept = {key: value for key, value in body.get("Attributes", {}).items() if key not in self.not_staged}
