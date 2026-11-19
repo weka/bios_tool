@@ -50,61 +50,91 @@ class Server(object):
             self.bmc.redfish.logout()
 
 
-def csv_load(f):
-    """
-    Load a CSV file into a list of dictionaries
-    :param f: file object
-    :return: list of dictionaries
-    """
-    import csv
-    reader = None
-    exc = None
-    try:
-        reader = csv.DictReader(f)
-    except Exception as exc:
-        #log.error(f"Error reading CSV file: {exc}")
-        return None, exc
-    return {"hosts":list(reader)}, exc
+class ConfigError(Exception):
+    pass
 
-def yaml_load(f):
-    data = None
-    exc = None
-    try:
-        data = yaml.unsafe_load(f)
-    except Exception as exc:
-        pass
-        #log.error(f"Error reading YAML file: {exc}")
-        #raise
-    return data, exc
 
-# load a config file - either CSV or YAML
-def load_config(inputfile):
-    data = None
-    try:
-        f = open(inputfile)
-    except Exception as exc:
-        raise
-    data, exc = yaml_load(f)
-    if type(data) is not dict:   # yaml_load returns a dict; if not a dict, it's an error reading file
-        f.seek(0)   # rewind the file
-        data, exc = csv_load(f)     # try CSV
-    if type(data) is not dict:
-        log.error(f"Error reading config file: {exc}")
-        return None
+class UniqueKeyLoader(yaml.SafeLoader):
+    """A safe YAML loader that refuses a key given twice in one mapping, where PyYAML keeps the last silently."""
+
+    def construct_mapping(self, node, deep=False):
+        seen = set()
+        for key_node, _ in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if key in seen:
+                raise yaml.constructor.ConstructorError(None, None, f"found the key {key!r} twice", key_node.start_mark)
+            seen.add(key)
+        return super().construct_mapping(node, deep)
+
+
+def load_yaml(path):
+    """The mapping in the YAML file at path. A missing file raises FileNotFoundError; anything else wrong with it
+    raises ConfigError."""
+    with open(path, encoding="utf-8-sig") as f:
+        try:
+            data = yaml.load(f, Loader=UniqueKeyLoader)
+        except yaml.YAMLError as exc:
+            raise ConfigError(f"{path} is not valid YAML: {exc}")
+    if not isinstance(data, dict):
+        raise ConfigError(f"{path} should hold a YAML mapping")
     return data
 
+
+def load_bios_settings(path):
+    """The BIOS settings file: manufacturer, then CPU architecture, then model (or '*'), then setting: value."""
+    data = load_yaml(path)
+    for manufacturer, archs in data.items():
+        if not isinstance(archs, dict):
+            raise ConfigError(f"{path}: {manufacturer} should hold CPU architectures (AMD, Intel, ARM)")
+        for arch, models in archs.items():
+            if not isinstance(models, dict):
+                raise ConfigError(f"{path}: {manufacturer}/{arch} should hold models, or '*'")
+            for model, settings in models.items():
+                if not isinstance(settings, dict):
+                    raise ConfigError(f"{path}: {manufacturer}/{arch}/{model} should be a model holding settings")
+                for setting, value in settings.items():
+                    if isinstance(value, (dict, list)) or value is None:
+                        raise ConfigError(f"{path}: {manufacturer}/{arch}/{model}/{setting} should have one value")
+    return data
+
+
+def load_hosts(path):
+    """The BMCs listed in path, as dicts of name, user and password. The file is YAML (a 'hosts' list) or CSV with a
+    name,user,password header, whatever its name says."""
+    with open(path, encoding="utf-8-sig") as f:
+        text = f.read()
+    try:
+        data = yaml.load(text, Loader=UniqueKeyLoader)
+        yaml_error = None
+    except yaml.YAMLError as exc:
+        data, yaml_error = None, exc
+    if isinstance(data, dict):
+        hosts = data.get("hosts")
+        if not isinstance(hosts, list):
+            raise ConfigError(f"{path} should hold a 'hosts' list")
+    else:
+        import csv
+        import io
+        reader = csv.DictReader(io.StringIO(text), skipinitialspace=True)
+        if not {"name", "user", "password"} <= {field.strip() for field in reader.fieldnames or []}:
+            hint = f" (as YAML: {yaml_error})" if yaml_error else ""
+            raise ConfigError(f"{path} is neither YAML with a 'hosts' list nor CSV starting with a "
+                              f"name,user,password line{hint}")
+        hosts = [{key.strip(): (value or "").strip() for key, value in row.items() if key} for row in reader]
+    for number, host in enumerate(hosts, 1):
+        if not isinstance(host, dict) or not all(host.get(key) for key in ("name", "user", "password")):
+            raise ConfigError(f"{path}: host {number} needs a name, a user and a password")
+    return hosts
+
+
 def generate_config(bmc_ips, bmc_username, bmc_password):
-    conf = dict()
-    conf['hosts'] = list()
-    for ip in bmc_ips:
-        conf['hosts'].append({'name': ip, 'user': bmc_username[0], 'password': bmc_password[0]})
-    return conf
+    return [{'name': ip, 'user': bmc_username[0], 'password': bmc_password[0]} for ip in bmc_ips]
 
 def save_bmc_db(redfish_list, defaults_database, force=False):
     bmc_db = None
     changes_made = False
     try:
-        bmc_db = load_config(defaults_database)
+        bmc_db = load_yaml(defaults_database)
     except FileNotFoundError: # it's ok if it doesn't exist - we'll create it
         log.info(f"Bios database {defaults_database} does not exist, creating")
         pass
@@ -150,7 +180,7 @@ def diff_defaults(defaults_database, redfish_list):
     bmc_db = None
     custom_settings = dict()
     try:
-        bmc_db = load_config(defaults_database)
+        bmc_db = load_yaml(defaults_database)
     except FileNotFoundError: # it's ok if it doesn't exist - we'll create it
         log.info(f"Bios database {defaults_database} does not exist, creating")
     except Exception as exc:
@@ -417,9 +447,9 @@ def main():
     progname = sys.argv[0]
     parser = argparse.ArgumentParser(description="View/Change BIOS Settings on servers")
 
-    parser.add_argument("-c", "--hostconfigfile", type=str, nargs="?", default="host_config.csv",
+    parser.add_argument("-c", "--hostconfigfile", type=str, default="host_config.csv",
                         help = "filename of host config file. Default is host_config.csv")
-    parser.add_argument("-b", "--bios", type=str, nargs="?", default="bios_settings.yml",
+    parser.add_argument("-b", "--bios", type=str, default="bios_settings.yml",
                         help="bios configuration filename. Default is bios_settings.yml")
     parser.add_argument("--bmc-config", dest="bmc_config", default=False, action="store_true",
                         help="Configure the BMCs to allow RedFish access")
@@ -475,18 +505,17 @@ def main():
             log.error("You must provide a username and password when using --bmc-ips")
             sys.exit(1)
         log.info(f"Using BMC IPs - ignoring {args.hostconfigfile}")
-        conf = generate_config(args.bmc_ips, args.bmc_username, args.bmc_password)
+        hosts = generate_config(args.bmc_ips, args.bmc_username, args.bmc_password)
     else:
-        # else try to load the configfile
         try:
-            conf = load_config(args.hostconfigfile)
-        except Exception as exc:
-            log.error(f"Unable to open host configuration file: {exc}")
+            hosts = load_hosts(args.hostconfigfile)
+        except (OSError, ConfigError) as exc:
+            log.error(f"Unable to read the host configuration file: {exc}")
             sys.exit(1)
 
     # create objects from the config in the input file or command-line
     servers_list = list()
-    for host in conf['hosts']:   # host is a dict, {name, user, password}
+    for host in hosts:   # host is a dict, {name, user, password}
         servers_list.append(Server(host['name'], host['user'], host['password']))
 
     # did the user ask us to make sure the BMC is set with ipmi over lan and redfish, etc?
@@ -498,12 +527,14 @@ def main():
         log.info("BMCs have been configured")
         sys.exit(0)
 
-    # try to load the BIOS settings (the entire database) (the entire database, all server types/models)
-    try:
-        all_bios_settings = load_config(args.bios)
-    except Exception as exc:
-        log.error(f"Unable to parse bios settings configuration file: {exc}")
-        sys.exit(1)
+    # the BIOS settings are read before any BMC is contacted, so a broken file changes nothing
+    all_bios_settings = None
+    if not (args.dump or args.diff or args.diff_defaults or args.reset_bios or args.save):
+        try:
+            all_bios_settings = load_bios_settings(args.bios)
+        except (OSError, ConfigError) as exc:
+            log.error(f"Unable to read the BIOS settings file: {exc}")
+            sys.exit(1)
 
     # if they asked for a diff of two servers, make sure they're in the config file...
     if args.diff:
