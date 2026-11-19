@@ -1,4 +1,5 @@
 # BMC setup.py - setup the BMC for the host; check for brand and ensure redfish and ipmi over lan are enabled
+import os
 import time
 import subprocess
 
@@ -51,20 +52,28 @@ def lenovo_parse_return(string):
 
 
 def get_ipmi_ip(channel=1):
-    # run 'ipmitool lan print' and extract the ip address from the output and return it
+    """The address of this host's own BMC, from 'ipmitool lan print', or None if it cannot be read. sudo is never
+    allowed to ask for a password."""
+    command = ['ipmitool', 'lan', 'print', str(channel)]
+    if os.geteuid() != 0:
+        command = ['sudo', '-n'] + command
     try:
-        # Run 'ipmitool lan print'
-        result = subprocess.run(['sudo', 'ipmitool', 'lan', 'print', str(channel)],
-                                capture_output=True, text=True, check=True)
-        # Extract the IP address
-        for line in result.stdout.splitlines():
-            if ":" in line:
-                key, val = line.split(":", 1)
-                if key.strip() == "IP Address":
-                    return val.strip()
-    except Exception as e:
-        log.error(f"Failed to run ipmitool: {e}, {e.stderr}")
-        log.error("Are you not running as 'root' and don't have passwordless sudo?")
+        result = subprocess.run(command, capture_output=True, text=True, check=True, timeout=30)
+    except FileNotFoundError as exc:
+        log.warning(f"Cannot tell whether this host is one of the servers: {exc.filename} is not installed")
+        return None
+    except subprocess.CalledProcessError as exc:
+        log.warning(f"Cannot tell whether this host is one of the servers: {' '.join(command)} failed: "
+                    f"{exc.stderr.strip()}")
+        return None
+    except subprocess.TimeoutExpired:
+        log.warning(f"Cannot tell whether this host is one of the servers: {' '.join(command)} timed out")
+        return None
+    for line in result.stdout.splitlines():
+        if ":" in line:
+            key, val = line.split(":", 1)
+            if key.strip() == "IP Address":
+                return val.strip()
     return None
 
 

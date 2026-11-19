@@ -23,6 +23,7 @@ class Tool:
         monkeypatch.chdir(tmp_path)
         monkeypatch.setattr(bios_tool, "configure_logging", lambda logger, verbosity: logger.setLevel(logging.DEBUG))
         monkeypatch.setattr(redfish, "redfish_client", self._client)
+        monkeypatch.setattr(bios_tool, "get_ipmi_ip", lambda: None)
         caplog.set_level(logging.DEBUG)
 
     def _client(self, base_url, username=None, password=None, **kwargs):
