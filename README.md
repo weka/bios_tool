@@ -33,6 +33,8 @@ optional arguments:
   --bmc-password BMC_PASSWORD
                         a password to use on all hosts in --bmc-ips; visible to other users in ps and in
                         shell history, so prefer $BIOS_TOOL_BMC_PASSWORD or the prompt
+  --ca-file CA_FILE     check each BMC's TLS certificate against the CA certificates in this file; by
+                        default certificates are not checked, as most BMCs' are self-signed
   -v, --verbose         enable verbose mode
   --version             report program version and exit
 
