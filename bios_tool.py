@@ -616,9 +616,19 @@ def main():
     # did the user ask us to make sure the BMC is set with ipmi over lan and redfish, etc?
     if args.bmc_config:
         log.info("Configuring BMCs")
+        failed = list()
         for host in servers_list:
-            log.info(f"Configuring {host['name']}")
-            bmc_setup(host.hostname, host.username, host.password)
+            log.info(f"Configuring {host.hostname}")
+            try:
+                configured = bmc_setup(host.hostname, host.username, host.password)
+            except Exception as exc:
+                log.error(f"Unable to configure {host.hostname}: {exc}")
+                configured = False
+            if not configured:
+                failed.append(host.hostname)
+        if failed:
+            log.error(f"{len(failed)} of {len(servers_list)} BMCs could not be configured: {', '.join(failed)}")
+            sys.exit(1)
         log.info("BMCs have been configured")
         sys.exit(0)
 

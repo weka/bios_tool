@@ -30,7 +30,7 @@ def hpe_string_to_dict(string):
     temp_dict = dict()
     for line in temp:
         if "=" in line:
-            key, value = line.split("=")
+            key, value = line.split("=", 1)
             temp_dict[key] = value
         else:
             if len(line) == 0:
@@ -49,6 +49,15 @@ def lenovo_parse_return(string):
     line = string.splitlines()[0]
     trimmed = line[8:].strip()
     return trimmed
+
+
+def lenovo_user_id(users_output, user):
+    """The number of the account named user in the output of a Lenovo XCC 'users' command, or None."""
+    for line in users_output.splitlines():
+        fields = line.replace(".", " ").split()
+        if len(fields) > 1 and fields[0].isdigit() and user in fields[1:2]:
+            return fields[0]
+    return None
 
 
 def get_ipmi_ip(channel=1):
@@ -101,15 +110,8 @@ def bmc_setup(host, user, password):
         # To effectively enable this service, you must ensure that 'ipmi' is selected in the '-ai' option of the 'users' command.
         ssh_sess.run("portcontrol -ipmi on") # lenovo
         # try to find our user id number - it doesn't take names
-        user_id = None
         ssh_sess.run(f"users")
-        all_users = ssh_sess.output.stdout.splitlines()
-        for line in all_users:
-            if user in line:
-                user_id = line.split()[0].strip()
-                #print(f"Lenovo host {host}: {user_id}")
-                break
-
+        user_id = lenovo_user_id(ssh_sess.output.stdout, user)
         if user_id is None:
             log.error(f"Lenovo server {host}: Unable to determine user_id")
             return False
@@ -117,6 +119,7 @@ def bmc_setup(host, user, password):
         message = lenovo_parse_return(ret.stdout)
         if message != "ok":
             log.error(f"Lenovo server {host}: Error enabling IPMI over LAN: {message}")
+            return False
     elif output.endswith("racadm>>"):  # Dell
         log.info(f"Dell server detected at {host}")
         # ret.stdout starts with ERROR: if there's a problem. status is always 0
@@ -137,8 +140,8 @@ def bmc_setup(host, user, password):
         # might be able to do this via RedFish...
         ret = ssh_sess.run("set /map1/config1 oemHPE_ipmi_dcmi_overlan_enable=yes")
         parsed_ret = hpe_string_to_dict(ret.stdout)
-        if len(parsed_ret) > 0 and parsed_ret["status"] != "0":
-            log.error(f"Error enabling IPMI over LAN on {host}: {parsed_ret['message']}")
+        if parsed_ret.get("status") != "0" and parsed_ret.get("message") != "Property value already set.":
+            log.error(f"Error enabling IPMI over LAN on {host}: {parsed_ret.get('message', ret.stdout.strip())}")
             return False
     else:
         log.error(f"Unknown BMC type detected at {host}")
