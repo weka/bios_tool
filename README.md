@@ -1,77 +1,78 @@
 # bios_tool
 A tool for viewing/setting bios settings for Weka servers
 
-```angular2html
-
-usage: bios_tool [-h] [-c [HOSTCONFIGFILE]] [-b [BIOS]] [--bmc-config] [--fix] [--reboot] [--dump] [--save-defaults] [--defaults-database DEFAULTS_DATABASE] [-f] [--reset-bios] [--diff DIFF DIFF] [--diff-defaults]
-                 [--bmc-ips [BMC_IPS ...]] [--bmc-username BMC_USERNAME] [--bmc-password BMC_PASSWORD] [-v] [--version]
+```
+usage: bios_tool [-h] [-c HOSTCONFIGFILE] [-b BIOS] [--bmc-config] [--fix] [--reboot] [-y] [--dump]
+                 [--save-defaults] [--defaults-database DEFAULTS_DATABASE] [-f] [--reset-bios] [--diff DIFF DIFF]
+                 [--diff-defaults] [--version] [--bmc-ips [BMC_IPS ...]] [--bmc-username BMC_USERNAME]
+                 [--bmc-password BMC_PASSWORD] [--ca-file CA_FILE] [-v]
 
 View/Change BIOS Settings on servers
 
-optional arguments:
+options:
   -h, --help            show this help message and exit
-  -c [HOSTCONFIGFILE], --hostconfigfile [HOSTCONFIGFILE]
-                        filename of host config file
-  -b [BIOS], --bios [BIOS]
-                        bios configuration filename
+  -c HOSTCONFIGFILE, --hostconfigfile HOSTCONFIGFILE
+                        filename of host config file. Default is host_config.csv
+  -b BIOS, --bios BIOS  bios configuration filename. Default is bios_settings.yml
   --bmc-config          Configure the BMCs to allow RedFish access
   --fix                 Correct any bios settings that do not match the definition
-  --reboot              Reboot the servers with BIOS changes waiting to be applied, after asking
-  -y, --yes             Answer yes to the question before rebooting or resetting
-  --dump                Print out BIOS settings only
+  --reboot              Reboot the servers with BIOS changes waiting to be applied (those --fix changed now or
+                        earlier), after asking
+  -y, --yes             Answer yes to the question before rebooting or resetting, so it can run without a terminal
+  --dump                Print out current BIOS settings only
   --save-defaults       Save default BIOS settings to defaults-database - should be factory reset values
   --defaults-database DEFAULTS_DATABASE
-                        Filename of the factory defaults-database
+                        Filename of the factory defaults-database. Default is defaults-db.yml
   -f, --force           With --save-defaults, overwrite a model already in the defaults database
   --reset-bios          Reset the BIOS to factory defaults, after asking. To also reboot, add the --reboot option
   --diff DIFF DIFF      Compare 2 hosts BIOS settings
   --diff-defaults       Compare hosts BIOS settings to factory defaults
+  --version             Display version number
   --bmc-ips [BMC_IPS ...]
-                        a list of hosts to configure, or none to use cluster beacons
+                        a list of hosts to configure instead of using the host_config.csv
   --bmc-username BMC_USERNAME
-                        a username to use on all hosts in --bmc_ips
+                        a username to use on all hosts in --bmc-ips
   --bmc-password BMC_PASSWORD
-                        a password to use on all hosts in --bmc-ips; visible to other users in ps and in
-                        shell history, so prefer $BIOS_TOOL_BMC_PASSWORD or the prompt
-  --ca-file CA_FILE     check each BMC's TLS certificate against the CA certificates in this file; by
-                        default certificates are not checked, as most BMCs' are self-signed
+                        a password to use on all hosts in --bmc-ips; visible to other users in ps and in shell
+                        history, so prefer $BIOS_TOOL_BMC_PASSWORD or the prompt
+  --ca-file CA_FILE     check each BMC's TLS certificate against the CA certificates in this file; by default
+                        certificates are not checked, as most BMCs' are self-signed
   -v, --verbose         enable verbose mode
-  --version             report program version and exit
-
 ```
 
 ## Getting Started
-There are 3 configuration files for bios_tool: a host configuration file ("host_config.yml" or host_config.csv), a BIOS settings configuration file ("bios_config.yml"), and a defaults database ("defaults-db.yml")
-You can either use these default names or override the configuration file names using the provided command-line switches, -c/--hostconfigfile and -b/--bios or --bmc_ips.  (see Optional Behaviors/Command-line Host Specification below for --bmc_ips)
-### host_config.yml or csv
-The host_config.yml/csv defines the list of hosts, and their logon credentials for the BMC (ipmi, iLO, iDRAC).  This may be in YAML or CSV format.  Use the file extension `.yml` or `.csv` to indicate the format.
+There are 3 configuration files for bios_tool: a host configuration file (`host_config.csv`), a BIOS settings file (`bios_settings.yml`), and a defaults database (`defaults-db.yml`). They are looked for in the current folder.
+You can either use these default names or override them with `-c`/`--hostconfigfile`, `-b`/`--bios` and `--defaults-database`, or list the BMCs with `--bmc-ips` instead of a host file (see Command-line Host Specification below).
+
+bios_tool needs Python 3.9 or later and the packages in `requirements.txt`; `pyinstall.sh` builds a single binary that needs neither.
+### host_config.csv
+The host configuration file lists the BMCs (IPMI, iLO, iDRAC, XCC) and their logon credentials. It may be CSV or YAML, whatever its name: bios_tool reads it as YAML if it holds a `hosts` list, and otherwise as CSV, which must start with a `name,user,password` line. It holds BMC passwords, so keep it readable only by you, and do not commit it.
 
 The default format is standard CSV, as such: (compatible with Excel)
 ```angular2html
 name,user,password
-172.29.3.164,ADMIN,_PASSWORD_1!
-172.29.3.1,Administrator,Administrator
-172.29.1.74,root,Administrator
-172.29.1.75,root,Administrator
+192.0.2.11,ADMIN,<password>
+192.0.2.12,Administrator,<password>
+192.0.2.13,root,<password>
 ```
 
 The format can also be standard YAML, as such:
 ```angular2html
 hosts:
-  - name: 172.29.3.1
+  - name: 192.0.2.11
     user: Administrator
-    password: Administrator
-  - name: 172.29.3.2
+    password: <password>
+  - name: 192.0.2.12
     user: Administrator
-    password: Administrator
+    password: <password>
 ```
 
 You should set all the servers you want to work with here.   Note they may have different passwords for each server.
 
-See the section on `--bcm_ips` to configure the hosts on the command line instead of in configuration files.
+See the section on `--bmc-ips` to configure the hosts on the command line instead of in configuration files.
 
-### bios_config.yml (and others)
-The `bios_config.yml` defines general BIOS settings that you want set on the servers that are defined in the `host_config.yml` file.   There are other settings files provided: `Dell-Genoa-bios.yml` for Dell servers equipped with Genoa generation AMD processors, and `WEKApod.yml`, specifically for WEKApod servers (which come pre-set anyway, but if you want to make the same settings to similar servers, these are the settings).
+### bios_settings.yml (and others)
+The `bios_settings.yml` defines general BIOS settings that you want set on the servers that are defined in the host configuration file.   There are other settings files provided: `Dell-Genoa-bios.yml` for Dell servers equipped with Genoa generation AMD processors, and `WEKApod.yml`, specifically for WEKApod servers (which come pre-set anyway, but if you want to make the same settings to similar servers, these are the settings).
 
 The format of the bios settings file is standard YAML, as such:
 ```angular2html
@@ -85,14 +86,16 @@ server-manufacturer:
       setting: value
       setting: value
 ```
-The server-manufacturer is matched to the manufacturer ("Oem") listed in the RedFish data so this tool can be used with most manufacturers that supports RedFish.
-Currently known manufacturer names are "Dell Inc.", "HPE", "Lenovo", and "Supermicro" and defaults for these manufacturers are in the example file.
+The server-manufacturer is matched to the `Manufacturer` the server's Redfish `Systems` resource reports, so this tool can be used with most manufacturers that support Redfish.
+Currently known manufacturer names are "Dell Inc.", "HPE", "Lenovo", "Supermicro" and "WEKA", and settings for these manufacturers are in the example file.
 
-The architecture can be either "AMD" or "Intel".   No other architectures are currently supported.
+The architecture is "AMD", "Intel" or "ARM", from the server's CPU.
 
-See the provided `bios_config.yml` for a full example, but here's what it looks like:
+The file is read as YAML with no tricks: a key given twice, a model holding something other than settings, or a YAML error stops bios_tool before it contacts any server.
+
+See the provided `bios_settings.yml` for a full example, but here's what it looks like:
 ```angular2html
-Dell:
+Dell Inc.:
   AMD:
     PowerEdge R6615:
       LogicalProc: Disabled
@@ -111,27 +114,38 @@ No changes are made to the servers (read-only mode)
 
 Example output:
 ```angular2html
-Fetching BIOS settings of host 172.29.3.1
-Fetching BIOS settings of host 172.29.3.2
-Fetching BIOS settings of host 172.29.3.3
+Opening sessions to hosts:
+Connected to 192.0.2.11
+Connected to 192.0.2.14
 [...snip...]
-No changes are needed on 172.29.3.1
-No changes are needed on 172.29.3.2
-No changes are needed on 172.29.3.3
+Looking at 192.0.2.11: HPE/AMD/ProLiant DL325 Gen10 Plus:
+No changes are needed on 192.0.2.11
+Looking at 192.0.2.14: HPE/AMD/ProLiant DL325 Gen10 Plus:
+192.0.2.14: BIOS setting ApplicationPowerBoost is Enabled, but should be Disabled
+192.0.2.14: BIOS setting CStateEfficiencyMode is Enabled, but should be Disabled
+192.0.2.14: BIOS setting DataFabricCStateEnable is Auto, but should be Disabled
+192.0.2.14: BIOS setting DeterminismControl is DeterminismCtrlAuto, but should be DeterminismCtrlManual
+4 changes are needed on 192.0.2.14
 [...snip...]
-172.29.3.4: BIOS setting ApplicationPowerBoost is Enabled, but should be Disabled
-172.29.3.4: BIOS setting CStateEfficiencyMode is Enabled, but should be Disabled
-172.29.3.4: BIOS setting DataFabricCStateEnable is Auto, but should be Disabled
-172.29.3.4: BIOS setting DeterminismControl is DeterminismCtrlAuto, but should be DeterminismCtrlManual
-[...snip...]
+There are 1 hosts needing changes
 ```
+
+## Exit status
+bios_tool exits with status 0 when it did everything it was asked, and 1 when anything was left undone: a server it
+could not reach, a server or setting the settings file does not cover, a change or reboot a BMC refused, or a question
+it could not ask. Check it in scripts; the log says what was left undone.
+
+A server the settings file has no entry for (no manufacturer, architecture, or model or `'*'`) is reported by name.
+With `--fix` or `--reboot`, no server is changed if any is unknown.
 
 ## Optional Behaviors
 ### BMC Configuration mode
-Using the `--bmc_config` command line option will cause bios_tool to ssh to each of the servers and turn on RedFish and IPMI Over LAN.   The RedFish is strictly REQUIRED for bios_tool operation.   IPMI Over LAN is required for WMS deployment to operate properly, so is automatically enabled.
+Using the `--bmc-config` command line option will cause bios_tool to ssh to each of the servers and turn on RedFish and IPMI Over LAN.   The RedFish is strictly REQUIRED for bios_tool operation.   IPMI Over LAN is required for WMS deployment to operate properly, so is automatically enabled.
 ### Fix Mode
-Using the `--fix` command line option will cause the tool to make the settings to the bios as defined in the `bios_settings.yml`.   
-It will not reboot the server(s) unless given the `--reboot` option
+Using the `--fix` command line option will cause the tool to make the settings to the bios as defined in the `bios_settings.yml`.
+It writes only the settings that differ, skips those already staged by an earlier `--fix`, and reads them back to
+confirm the BMC staged them. They apply at the server's next reboot; it will not reboot the server(s) unless given the
+`--reboot` option.
 ### Reboot option
 `--reboot` reboots the servers whose BIOS has changes waiting to be applied: those that `--fix` changed in the same
 run, and those changed by an earlier `--fix` that were not rebooted. Other servers are not rebooted. bios_tool lists
@@ -158,11 +172,11 @@ Using the `--diff` option will compare all the settings on 2 servers, and print 
 
 Example diff output:
 ```angular2html
-Fetching BIOS settings of host 172.29.3.1
-Fetching BIOS settings of host 172.29.3.6
+Fetching BIOS settings of host 192.0.2.1
+Fetching BIOS settings of host 192.0.2.6
 
 Settings that are different between the servers:
-Setting                     172.29.3.1                 172.29.3.6
+Setting                     192.0.2.1                 192.0.2.6
 --------------------------  -------------------------  ----------------------------
 ApplicationPowerBoost       Disabled                   Enabled
 CStateEfficiencyMode        Disabled                   Enabled
@@ -176,7 +190,7 @@ PerformanceDeterminism      PerformanceDeterministic   PowerDeterministic
 PowerRegulator              StaticHighPerf             OsControl
 ProcAmdIoVt                 Disabled                   Enabled
 ProcSMT                     Disabled                   Enabled
-SerialNumber                MXQ2201FNK                 MXQ2201FND
+SerialNumber                SERIAL0001                 SERIAL0002
 Sriov                       Disabled                   Enabled
 ThermalConfig               IncreasedCooling           OptimalCooling
 WorkloadProfile             I/OThroughput              GeneralPowerEfficientCompute
@@ -232,3 +246,10 @@ The process for doing this is pretty straightforward:
 8. Tweak the BIOS settings as needed; try some different settings if this is a really new configuration
 9. Repeat Step 4-8 as needed, until a stable, well-performing configuration is attained.
 10. Submit the new definition to R&D - you can even create a PR with the new files (`bios_settings.yml` and `defaults_db.yml`) in the github repo.
+
+## Development
+The tests run bios_tool against a fake Redfish BMC, with no hardware:
+```
+pip install -r requirements.txt -r requirements-dev.txt
+python -m pytest tests
+```

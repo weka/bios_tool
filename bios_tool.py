@@ -586,7 +586,7 @@ def main():
     parser.add_argument("--bmc-ips", dest="bmc_ips", type=str, nargs="*",
                         help="a list of hosts to configure instead of using the host_config.csv", default=None)
     parser.add_argument("--bmc-username", dest="bmc_username", type=str, nargs=1,
-                        help="a username to use on all hosts in --bmc_ips", default=None)
+                        help="a username to use on all hosts in --bmc-ips", default=None)
     parser.add_argument("--bmc-password", dest="bmc_password", type=str, nargs=1,
                         help="a password to use on all hosts in --bmc-ips; visible to other users in ps and in "
                              "shell history, so prefer $BIOS_TOOL_BMC_PASSWORD or the prompt", default=None)
