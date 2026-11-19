@@ -1,25 +1,21 @@
-from fake_bmc import dell, make_bmc
+from fake_bmc import dell
 
 SETTINGS = {"Dell Inc.": {"AMD": {"PowerEdge R6615": {"LogicalProc": "Disabled"}}}}
 
 
 def two(tool):
-    a = tool.add("10.0.0.1", make_bmc(dell()))
-    b = tool.add("10.0.0.2", make_bmc(dell()))
-    tool.settings(SETTINGS)
-    tool.hosts([("10.0.0.1", "admin", "secret"), ("10.0.0.2", "admin", "secret")])
-    return a, b
+    return tool.servers(SETTINGS, dell(), dell())
 
 
 def resets_bios(bmc):
-    return [uri for uri, body in bmc.posts if uri.endswith("Bios.ResetBios")]
+    return bmc.posts_to("Bios.ResetBios")
 
 
-def test_nothing_is_reset_without_an_answer(tool):
+def test_without_a_terminal_or_yes_no_bmc_is_contacted(tool):
     a, b = two(tool)
     assert tool.run("--reset-bios", "--reboot") == 1
-    assert a.posts == b.posts == []
-    assert "Reset the BIOS of 2 servers to factory defaults and reboot them" in tool.log
+    assert not a.logged_in and not b.logged_in
+    assert "run with --yes" in tool.log
 
 
 def test_reset_and_reboot(tool):

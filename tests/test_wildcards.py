@@ -1,4 +1,4 @@
-from fake_bmc import dell, make_bmc
+from fake_bmc import dell
 
 SETTINGS = {"Dell Inc.": {"AMD": {
     "*": {"LogicalProc": "Disabled", "ProcVirtualization": "Disabled"},
@@ -7,9 +7,7 @@ SETTINGS = {"Dell Inc.": {"AMD": {
 
 
 def check(tool, model):
-    bmc = tool.add("10.0.0.1", make_bmc(dell(model=model, ProcVirtualization="Unset", SysProfile="Unset")))
-    tool.settings(SETTINGS)
-    tool.hosts([("10.0.0.1", "admin", "secret")])
+    [bmc] = tool.servers(SETTINGS, dell(model=model, ProcVirtualization="Unset", SysProfile="Unset"))
     tool.run("--fix")
     return bmc.patches[0][1]["Attributes"]
 

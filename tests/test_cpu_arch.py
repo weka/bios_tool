@@ -1,7 +1,7 @@
 import pytest
 
 from RedFishBMC import cpu_arch
-from fake_bmc import ARM_CPU, dell, make_bmc
+from fake_bmc import ARM_CPU, dell
 
 
 @pytest.mark.parametrize("processor, arch", [
@@ -30,9 +30,7 @@ def test_the_first_processor_that_is_a_cpu_decides(tool):
     system = "/redfish/v1/Systems/System.Embedded.1"
     docs[f"{system}/Processors"]["Members"].insert(0, {"@odata.id": f"{system}/Processors/GPU1"})
     docs[f"{system}/Processors/GPU1"] = {"ProcessorType": "GPU", "Model": "Intel Data Center GPU"}
-    tool.add("10.0.0.1", make_bmc(docs))
-    tool.settings({"Dell Inc.": {"AMD": {"PowerEdge R6615": {"LogicalProc": "Disabled"}}}})
-    tool.hosts([("10.0.0.1", "admin", "secret")])
+    tool.servers({"Dell Inc.": {"AMD": {"PowerEdge R6615": {"LogicalProc": "Disabled"}}}}, docs)
 
     tool.run()
 

@@ -3,16 +3,14 @@ import os
 import pytest
 
 import bios_tool
-from fake_bmc import dell, make_bmc
+from fake_bmc import dell
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GOOD = "Dell Inc.:\n  AMD:\n    PowerEdge R6615:\n      LogicalProc: Disabled\n"
 
 
 def one_host(tool, settings):
-    bmc = tool.add("10.0.0.1", make_bmc(dell()))
-    tool.settings(settings)
-    tool.hosts([("10.0.0.1", "admin", "secret")])
+    [bmc] = tool.servers(settings, dell())
     return bmc
 
 
@@ -57,8 +55,7 @@ def test_a_broken_host_list_is_an_error(tool, text, error):
 
 
 def test_dump_does_not_need_a_settings_file(tool):
-    tool.add("10.0.0.1", make_bmc(dell()))
-    tool.hosts([("10.0.0.1", "admin", "secret")])
+    tool.servers(None, dell())
     assert tool.run("--dump") == 0
 
 

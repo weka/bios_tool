@@ -1,6 +1,8 @@
 import argparse
+import csv
 import difflib
 import getpass
+import io
 import os
 import re
 import logging
@@ -29,6 +31,9 @@ class Server(object):
         self.arch = None
         self.model = None
 
+    @property
+    def platform(self):
+        return f"{self.manufacturer}/{self.arch}/{self.model}"
 
     def connect(self):
         try:
@@ -118,8 +123,6 @@ def load_hosts(path):
         if not isinstance(hosts, list):
             raise ConfigError(f"{path} should hold a 'hosts' list")
     else:
-        import csv
-        import io
         reader = csv.DictReader(io.StringIO(text), skipinitialspace=True)
         if not {"name", "user", "password"} <= {field.strip() for field in reader.fieldnames or []}:
             hint = f" (as YAML: {yaml_error})" if yaml_error else ""
@@ -132,17 +135,13 @@ def load_hosts(path):
     return hosts
 
 
-def generate_config(bmc_ips, bmc_username, bmc_password):
-    return [{'name': ip, 'user': bmc_username, 'password': bmc_password} for ip in bmc_ips]
-
-
 PASSWORD_ENV = "BIOS_TOOL_BMC_PASSWORD"
 
 
 def bmc_password(given):
     """The password for --bmc-ips: --bmc-password, else $BIOS_TOOL_BMC_PASSWORD, else asked for at a terminal."""
     if given is not None:
-        return given[0]
+        return given
     if os.environ.get(PASSWORD_ENV):
         return os.environ[PASSWORD_ENV]
     if sys.stdin.isatty():
@@ -183,25 +182,14 @@ def save_bmc_db(redfish_list, defaults_database, force=False):
 
     # build the in-memory db
     for server in redfish_list:
-        manufacturer = server.manufacturer
-        model = server.model
-        architecture = server.arch
-        if manufacturer not in bmc_db:
-            bmc_db[manufacturer] = dict()
-        if architecture not in bmc_db[manufacturer]:
-            bmc_db[manufacturer][architecture] = dict()
-
-        # always overwrite any old settings?
-        if model in bmc_db[manufacturer][architecture]:
-            if force:
-                log.warning(f"{manufacturer}/{architecture}/{model} found in database, forcing overwrite")
-                bmc_db[manufacturer][architecture][model] = shareable(server.bios_settings)
-                changes_made = True
-            else:
-                log.info(f"{manufacturer}/{architecture}/{model} found in database; to force overwrite use --force")
-        else:
-            bmc_db[manufacturer][architecture][model] = shareable(server.bios_settings)
-            changes_made = True
+        models = bmc_db.setdefault(server.manufacturer, dict()).setdefault(server.arch, dict())
+        if server.model in models and not force:
+            log.info(f"{server.platform} found in database; to force overwrite use --force")
+            continue
+        if server.model in models:
+            log.warning(f"{server.platform} found in database, forcing overwrite")
+        models[server.model] = shareable(server.bios_settings)
+        changes_made = True
 
     if changes_made:
         with open(defaults_database, 'w') as f:
@@ -216,7 +204,7 @@ def diff_defaults(defaults_database, redfish_list):
     """Prints, per model, the settings that differ from its factory defaults. False if a server was skipped."""
     custom_settings = dict()
     shown_by = dict()
-    skipped = 0
+    skipped = False
     try:
         bmc_db = load_yaml(defaults_database)
     except FileNotFoundError:
@@ -230,12 +218,12 @@ def diff_defaults(defaults_database, redfish_list):
         manufacturer = server.bmc.manufacturer
         model = server.bmc.model
         arch = server.bmc.arch
-        bios_settings = shareable(server.bmc.bios_data.dict['Attributes'])  # bios settings on the target server
+        bios_settings = shareable(server.bios_settings)
 
         defaults = bmc_db.get(manufacturer, {}).get(arch, {}).get(model)
         if defaults is None:
             log.error(f"{server.hostname} is skipped: there are no default settings for {manufacturer}/{arch}/{model}")
-            skipped += 1
+            skipped = True
             continue
 
         # make a list of setting that differ on this server compared to factory defaults
@@ -272,7 +260,7 @@ def diff_defaults(defaults_database, redfish_list):
         print()
         print("Bios Differences (Edit these before adding to the bios_settings file):")
         print(yaml.dump(custom_settings))
-    return skipped == 0
+    return not skipped
 
 
 def bios_diff(hostlist):
@@ -392,7 +380,7 @@ def match_setting(name, bios_keys):
 def find_bios_settings(server, all_bios_settings):
     """The settings this server should have, under the names its BIOS uses, and the settings from the file that
     could not be matched to one; or None if the file has no entry for this kind of server."""
-    platform = f"{server.manufacturer}/{server.arch}/{server.model}"
+    platform = server.platform
     if server.manufacturer not in all_bios_settings:
         log.error(f"{server.hostname} is a {platform}: there is no '{server.manufacturer}' manufacturer in the BIOS "
                   f"settings file. Add it, with this server's architecture and model.")
@@ -435,10 +423,11 @@ def find_bios_settings(server, all_bios_settings):
 def reset_bios(args, redfish_list):
     """Resets the BIOS of every server to factory defaults, and reboots them with --reboot, after asking."""
     then = " and reboot them" if args.reboot else ""
-    answer = confirm(f"Reset the BIOS of {len(redfish_list)} servers to factory defaults{then}: "
-                     f"{', '.join(server.hostname for server in redfish_list)}?", args.yes)
-    failed = answer is None
-    for server in redfish_list if answer else []:
+    if not confirm(f"Reset the BIOS of {len(redfish_list)} servers to factory defaults{then}: "
+                   f"{', '.join(server.hostname for server in redfish_list)}?", args.yes):
+        return 0
+    failed = False
+    for server in redfish_list:
         if not server.bmc.reset_settings_to_default():
             failed = True
             continue
@@ -447,60 +436,46 @@ def reset_bios(args, redfish_list):
             if server.bmc.reboot():
                 log.info(f"{server.hostname} has been rebooted")
             else:
-                log.error(f"Unable to reboot {server.hostname}")
                 failed = True
     return 1 if failed else 0
 
 
 def check_and_fix(args, redfish_list, all_bios_settings):
     """Checks every server's BIOS against the settings file, and with --fix and --reboot changes and reboots them."""
-    # check BIOS settings
-    hosts_needing_changes = list()
     failed = False
-    fixed_hosts = list()
-    systems_rebooted = list()
-    # every host's settings are found before any host is changed, so an unknown server stops the run cleanly
-    wanted = dict()
-    unknown = list()
     unmatched = 0
     results = {server: [] for server in redfish_list}   # what happened to each server, for the summary
-    if not args.dump:
-        for server in redfish_list:
-            found = find_bios_settings(server, all_bios_settings)
-            if found is None:
-                unknown.append(server)
-                results[server].append(f"not in {args.bios}")
-            else:
-                wanted[server], missing = found
-                unmatched += len(missing)
-                if missing:
-                    results[server].append(f"{len(missing)} settings not in its BIOS")
+    # every server's settings are found before any is changed, so an unknown server stops the run cleanly
+    wanted = dict()
+    for server in redfish_list:
+        found = find_bios_settings(server, all_bios_settings)
+        if found is None:
+            results[server].append(f"not in {args.bios}")
+            continue
+        wanted[server], missing = found
+        unmatched += len(missing)
+        if missing:
+            results[server].append(f"{len(missing)} settings not in its BIOS")
+    unknown = len(redfish_list) - len(wanted)
     if unknown and (args.fix or args.reboot):
-        log.error(f"No server was changed: {len(unknown)} of them are not in {args.bios}.")
+        log.error(f"No server was changed: {unknown} of them are not in {args.bios}.")
         print_summary(results)
         return 1
-    # Loop through the servers
-    for server in redfish_list:
-        if args.dump:
-            server.bmc.print_settings()
-            continue
-        elif server in unknown:
-            continue
-        settings = wanted[server]
-        log.info(f"Looking at {server.hostname}: {server.bmc.manufacturer}/{server.bmc.arch}/{server.bmc.model}:")
+
+    fixed = list()
+    for server, settings in wanted.items():
+        log.info(f"Looking at {server.hostname}: {server.platform}:")
         # one BMC failing is reported, and the others are still checked and fixed
         try:
             changes, waiting = server.bmc.check_settings(settings)
             if changes:
                 log.info(f"{len(changes)} changes are needed on {server.hostname}")
-                hosts_needing_changes.append(server)
                 if not args.fix:
                     results[server].append(f"{len(changes)} settings to change")
                 elif server.bmc.change_settings(changes):
-                    fixed_hosts.append(server)
+                    fixed.append(server)
                     results[server].append(f"{len(changes)} settings changed")
                 else:
-                    log.error(f"Unable to fix {server.hostname}")
                     results[server].append(f"changing {len(changes)} settings failed")
                     failed = True
             if waiting:
@@ -515,44 +490,31 @@ def check_and_fix(args, redfish_list, all_bios_settings):
             failed = True
         log.info("")
 
-    if args.reboot and not args.dump:
+    if args.reboot:
         # only servers with BIOS changes waiting: those fixed now, and those fixed earlier without --reboot
-        to_reboot = [server for server in redfish_list if server not in unknown and
-                     (server in fixed_hosts or server.bmc.pending_changes())]
+        to_reboot = [server for server in wanted if server in fixed or server.bmc.pending_changes()]
         if not to_reboot:
             log.info("No server has BIOS changes waiting for a reboot")
-        else:
-            answer = confirm(f"Reboot {len(to_reboot)} servers to apply their BIOS changes: "
-                             f"{', '.join(server.hostname for server in to_reboot)}?", args.yes)
-            failed = failed or answer is None
-            for server in to_reboot if answer else []:
+        elif confirm(f"Reboot {len(to_reboot)} servers to apply their BIOS changes: "
+                     f"{', '.join(server.hostname for server in to_reboot)}?", args.yes):
+            for server in to_reboot:
                 log.info(f"Rebooting {server.hostname}")
                 if server.bmc.reboot():
-                    systems_rebooted.append(server)
                     results[server].append("rebooted")
                 else:
-                    log.error(f"Unable to reboot {server.hostname}")
                     results[server].append("reboot failed")
                     failed = True
 
-    if not args.dump:
-        print_summary(results)
-    if not args.fix:
-        log.info(f"There are {len(hosts_needing_changes)} hosts needing changes")
-    else:
-        if not args.reboot:
-            log.info(f"{len(fixed_hosts)} have been modified.  Please reboot them to activate changes.")
-        else:
-            log.info(f"{len(fixed_hosts)} have been modified, and {len(systems_rebooted)} rebooted.")
+    print_summary(results)
     if unmatched:
         log.error(f"{unmatched} settings from {args.bios} are not in their server's BIOS and were not checked.")
     if unknown:
-        log.error(f"{len(unknown)} servers are not in {args.bios} and were not checked.")
+        log.error(f"{unknown} servers are not in {args.bios} and were not checked.")
     return 1 if failed or unmatched or unknown else 0
 
 
 def print_summary(results):
-    rows = [[server.hostname, f"{server.manufacturer}/{server.arch}/{server.model}", "; ".join(notes)]
+    rows = [[server.hostname, server.platform, "; ".join(notes)]
             for server, notes in results.items()]
     print()
     print(tabulate(rows, headers=["Server", "Platform", "Result"]))
@@ -560,13 +522,8 @@ def print_summary(results):
 
 
 def confirm(question, assume_yes):
-    """True or False for the answer to a yes/no question, or None if it could not be asked."""
-    if assume_yes:
-        return True
-    if not sys.stdin.isatty():
-        log.error(f"{question} Not asked, as there is no terminal to answer on: run with --yes to answer yes.")
-        return None
-    return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
+    """Whether the answer to a yes/no question is yes. main makes sure there is a terminal to ask on."""
+    return assume_yes or input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
 
 
 def main():
@@ -604,9 +561,9 @@ def main():
                         help="Display version number")
     parser.add_argument("--bmc-ips", dest="bmc_ips", type=str, nargs="*",
                         help="a list of hosts to configure instead of using the host_config.csv", default=None)
-    parser.add_argument("--bmc-username", dest="bmc_username", type=str, nargs=1,
+    parser.add_argument("--bmc-username", dest="bmc_username", type=str,
                         help="a username to use on all hosts in --bmc-ips", default=None)
-    parser.add_argument("--bmc-password", dest="bmc_password", type=str, nargs=1,
+    parser.add_argument("--bmc-password", dest="bmc_password", type=str,
                         help="a password to use on all hosts in --bmc-ips; visible to other users in ps and in "
                              "shell history, so prefer $BIOS_TOOL_BMC_PASSWORD or the prompt", default=None)
     parser.add_argument("--ca-file", dest="ca_file", default=None,
@@ -630,6 +587,12 @@ def main():
     configure_logging(log, args.verbosity)
     #log_to_file("paramiko.log", logging.DEBUG)
 
+    # the questions before rebooting or resetting are checked for before any BMC is contacted
+    if (args.reboot or args.reset_bios) and not args.yes and not sys.stdin.isatty():
+        log.error("--reboot and --reset-bios ask before changing servers, and there is no terminal to answer on: "
+                  "run with --yes to answer yes.")
+        sys.exit(1)
+
     # if they provided a list of BMC IPs, they must also provide a username and password
     if args.bmc_ips is not None:
         password = bmc_password(args.bmc_password)
@@ -637,7 +600,7 @@ def main():
             log.error(f"--bmc-ips needs --bmc-username, and a password: ${PASSWORD_ENV}, or typed when asked")
             sys.exit(1)
         log.info(f"Using BMC IPs - ignoring {args.hostconfigfile}")
-        hosts = generate_config(args.bmc_ips, args.bmc_username[0], password)
+        hosts = [{'name': ip, 'user': args.bmc_username, 'password': password} for ip in args.bmc_ips]
     else:
         try:
             hosts = load_hosts(args.hostconfigfile)
@@ -732,6 +695,10 @@ def main():
             status = reset_bios(args, redfish_list)
         elif args.save:
             save_bmc_db(redfish_list, args.defaults_database, force=args.force)
+            status = 0
+        elif args.dump:
+            for server in redfish_list:
+                server.bmc.print_settings()
             status = 0
         else:
             status = check_and_fix(args, redfish_list, all_bios_settings)

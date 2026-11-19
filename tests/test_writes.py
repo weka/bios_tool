@@ -1,13 +1,11 @@
-from fake_bmc import dell, make_bmc
+from fake_bmc import dell
 
 SETTINGS = {"Dell Inc.": {"AMD": {"PowerEdge R6615": {
     "LogicalProc": "Disabled", "NumaNodesPerSocket": "1", "SecureBoot": "Disabled", "ProcVirtualization": "Disabled"}}}}
 
 
 def one(tool, **attributes):
-    bmc = tool.add("10.0.0.1", make_bmc(dell(**attributes)))
-    tool.settings(SETTINGS)
-    tool.hosts([("10.0.0.1", "admin", "secret")])
+    [bmc] = tool.servers(SETTINGS, dell(**attributes))
     return bmc
 
 

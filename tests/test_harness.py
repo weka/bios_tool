@@ -1,12 +1,10 @@
-from fake_bmc import dell, make_bmc
+from fake_bmc import dell
 
 SETTINGS = {"Dell Inc.": {"AMD": {"PowerEdge R6615": {"LogicalProc": "Disabled", "BootMode": "Uefi"}}}}
 
 
 def test_check_reports_a_drifted_setting_and_changes_nothing(tool):
-    bmc = tool.add("10.0.0.1", make_bmc(dell()))
-    tool.settings(SETTINGS)
-    tool.hosts([("10.0.0.1", "admin", "secret")])
+    [bmc] = tool.servers(SETTINGS, dell())
 
     tool.run()
 
@@ -17,9 +15,7 @@ def test_check_reports_a_drifted_setting_and_changes_nothing(tool):
 
 
 def test_fix_writes_the_settings_object(tool):
-    bmc = tool.add("10.0.0.1", make_bmc(dell()))
-    tool.settings(SETTINGS)
-    tool.hosts([("10.0.0.1", "admin", "secret")])
+    [bmc] = tool.servers(SETTINGS, dell())
 
     tool.run("--fix")
 

@@ -1,7 +1,7 @@
 import pytest
 
 from bios_tool import match_setting
-from fake_bmc import AMD_CPU, make_bmc, supermicro
+from fake_bmc import AMD_CPU, supermicro
 
 SMC = ["SMTControl_0040", "Hyper_Threading_ALL_", "SR_IOVSupport", "ConsoleRedirection_00A5",
        "ConsoleRedirection_00A7", "Processors_SVMMode", "Processors_P_state2"]
@@ -23,10 +23,9 @@ def test_match_setting(name, key, candidates):
 
 
 def test_unmatched_settings_are_reported_not_written_and_fail_the_run(tool):
-    bmc = tool.add("10.0.0.1", make_bmc(supermicro(cpu=AMD_CPU, SMTControl_0037="Enabled")))
-    tool.settings({"Supermicro": {"AMD": {"AS -1115CS-TNR": {
-        "SMTControl": "Disabled", "SMTControlMode": "Off", "ConsoleRedirectionX": "Enabled"}}}})
-    tool.hosts([("10.0.0.1", "admin", "secret")])
+    [bmc] = tool.servers({"Supermicro": {"AMD": {"AS -1115CS-TNR": {
+        "SMTControl": "Disabled", "SMTControlMode": "Off", "ConsoleRedirectionX": "Enabled"}}}},
+        supermicro(cpu=AMD_CPU, SMTControl_0037="Enabled"))
 
     assert tool.run("--fix") == 1
 

@@ -1,14 +1,11 @@
-from fake_bmc import dell, make_bmc
+from fake_bmc import dell
 
 SETTINGS = {"Dell Inc.": {"AMD": {"PowerEdge R6615": {"LogicalProc": "Disabled"}}}}
 
 
 def test_a_bmc_failing_mid_run_does_not_stop_the_others(tool):
-    broken = tool.add("10.0.0.1", make_bmc(dell()))
-    fine = tool.add("10.0.0.2", make_bmc(dell()))
+    broken, fine = tool.servers(SETTINGS, dell(), dell())
     broken.patch_status = None      # the connection drops on the PATCH
-    tool.settings(SETTINGS)
-    tool.hosts([("10.0.0.1", "admin", "secret"), ("10.0.0.2", "admin", "secret")])
 
     assert tool.run("--fix", "--reboot", "--yes") == 1
 
@@ -19,9 +16,7 @@ def test_a_bmc_failing_mid_run_does_not_stop_the_others(tool):
 
 
 def test_a_powered_off_server_is_powered_on_and_the_state_is_read_fresh(tool):
-    bmc = tool.add("10.0.0.1", make_bmc(dell()))
-    tool.settings(SETTINGS)
-    tool.hosts([("10.0.0.1", "admin", "secret")])
+    [bmc] = tool.servers(SETTINGS, dell())
     bmc.system()["PowerState"] = "Off"
     assert tool.run("--fix", "--reboot", "--yes") == 0
     assert bmc.resets() == ["On"]

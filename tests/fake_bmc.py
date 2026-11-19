@@ -4,23 +4,14 @@ Each FakeBMC holds the Redfish documents of one server, keyed by URI, and record
 The profiles below are synthetic: they follow the shape each vendor's BMC returns, not any real machine's values.
 """
 import copy
-import json
-
 import redfish
-from redfish.rest.v1 import RisObject
+from redfish.rest.v1 import RisObject, StaticRestResponse
 
 ROOT = "/redfish/v1"
 
 
-class FakeResponse:
-    def __init__(self, status, body=None):
-        self.status = status
-        self.dict = body if body is not None else {}
-        self.text = json.dumps(self.dict)
-
-    @property
-    def obj(self):
-        return RisObject.parse(self.dict)
+def response(status, body=None):
+    return StaticRestResponse(Status=status, Content=body if body is not None else {}, Headers={})
 
 
 class FakeBMC:
@@ -47,15 +38,18 @@ class FakeBMC:
     def pending(self):
         return self.docs[self.bios()["@Redfish.Settings"]["SettingsObject"]["@odata.id"]]["Attributes"]
 
+    def posts_to(self, action):
+        return [body for uri, body in self.posts if uri.endswith(action)]
+
     def resets(self):
-        return [body.get("ResetType") for uri, body in self.posts if uri.endswith("ComputerSystem.Reset")]
+        return [body.get("ResetType") for body in self.posts_to("ComputerSystem.Reset")]
 
     def get(self, uri):
         uri = uri.rstrip("/") or ROOT
         if uri not in self.docs:
-            return FakeResponse(404, {"error": {"code": "Base.1.0.ResourceMissingAtURI",
+            return response(404, {"error": {"code": "Base.1.0.ResourceMissingAtURI",
                                                 "@Message.ExtendedInfo": [{"Message": f"{uri} not found"}]}})
-        return FakeResponse(200, copy.deepcopy(self.docs[uri]))
+        return response(200, copy.deepcopy(self.docs[uri]))
 
     def patch(self, uri, body, headers=None):
         if self.patch_status is None:
@@ -66,15 +60,15 @@ class FakeBMC:
         if self.patch_hook is not None:
             status = self.patch_hook(uri, body, headers or {}) or status
         if status >= 300:
-            return FakeResponse(status)
+            return response(status)
         if uri in self.docs:
             kept = {key: value for key, value in body.get("Attributes", {}).items() if key not in self.not_staged}
             self.docs[uri].setdefault("Attributes", {}).update(kept)
-        return FakeResponse(status)
+        return response(status)
 
     def post(self, uri, body):
         self.posts.append((uri, copy.deepcopy(body)))
-        return FakeResponse(self.post_status)
+        return response(self.post_status)
 
 
 class FakeClient:
@@ -163,7 +157,3 @@ def supermicro(model="AS -1115CS-TNR", cpu=AMD_CPU, **attributes):
     attrs = {"SMTControl_0037": "Enabled", "IOMMU_0038": "Auto", "ConsoleRedirection_00A5": "Disabled"}
     attrs.update(attributes)
     return _server("1", "Supermicro", model, cpu, attrs, "SD", oem="Supermicro")
-
-
-def make_bmc(docs, **kwargs):
-    return FakeBMC(docs, **kwargs)
