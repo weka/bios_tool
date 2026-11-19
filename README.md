@@ -99,7 +99,7 @@ Dell:
 [...snip...]
 ```
 
-Also NEW is specifying `'*'` as a model, which will match all models of a particular manufacturer and architecture.  This can be useful for new server models that use the same BIOS as a known server model.
+A model of `'*'` holds the settings every model of that manufacturer and architecture needs. A server gets the `'*'` settings with its own model's settings laid over them: a setting in both takes the model's value, and a server whose model is not listed gets the `'*'` settings alone.
 
 ## Default Behavior
 With no command-line overrides, bios_tool will scan the hosts in the `host_config.csv` and note where they differ (if they differ) from the settings in the `bios_settings.yml` file.

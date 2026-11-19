@@ -331,8 +331,6 @@ def trim_trailing_hex(s):
 # If there is no match for the server model, try finding one that matches closely?
 from rapidfuzz import process, fuzz
 def find_bios_settings(server, all_bios_settings, force=False):
-    base_settings = None
-    wild = False
     if server.manufacturer in all_bios_settings:
         mfg = all_bios_settings[server.manufacturer]
     else:
@@ -343,14 +341,12 @@ def find_bios_settings(server, all_bios_settings, force=False):
     else:
         log.error(f"Server {server.hostname}: Unknown processor architecture: {server.arch}.  Aborting.")
         return None
-    if server.model in arch:
-        base_settings = arch[server.model] # exact match
-    elif '*' in arch:
-        base_settings = arch['*']  # wildcard entry - give it a try
-        wild = True
-
-    if base_settings is None:
+    if server.model not in arch and '*' not in arch:
         return None
+    # the '*' entry holds what every model of this manufacturer and architecture needs; the model's entry overrides it
+    wild = server.model not in arch
+    base_settings = dict(arch.get('*') or {})
+    base_settings.update(arch.get(server.model) or {})
 
     derived_keys = dict()
     preprocessor = trim_trailing_hex if server.manufacturer == "Supermicro" else None
