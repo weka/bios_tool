@@ -167,6 +167,7 @@ HPE:
       ProcSMT: Disabled
       BootMode: Uefi
       SecureBootStatus: Disabled
+      ProcAes: Enabled
   Intel:
     '*':
       IntelProcVtd: Disabled
@@ -210,10 +211,10 @@ Supermicro:
       EnhancedHaltState(C1E): Disabled
       HardwareP-States: Disabled
       Hyper-Threading[ALL]: Enabled
-      PackageCState: Disabled
+      PackageCState: "C0/C1 state"
       SR-IOVSupport: Enabled
       SpeedStep(P-States): Disabled
-      Intel\u00aeVTforDirectedI/O(VT-d): Disabled
+      "Intel\u00aeVTforDirectedI/O(VT-d)": Disabled
 Lenovo:
   AMD:
     ThinkSystem SR635 V3:

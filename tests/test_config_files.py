@@ -69,7 +69,7 @@ def test_save_defaults_does_not_overwrite_a_broken_database(tool):
     assert (tool.dir / "defaults-db.yml").read_text() == "Dell Inc.: [\n"
 
 
-@pytest.mark.parametrize("name", ["bios_settings.yml", "WEKApod.yml"])
+@pytest.mark.parametrize("name", ["bios_settings.yml", "WEKApod.yml", "Dell-Genoa-bios.yml"])
 def test_the_shipped_settings_files_load(name):
     bios_tool.load_bios_settings(os.path.join(REPO, name))
 
