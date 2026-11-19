@@ -48,7 +48,7 @@ class Server(object):
 
     def close(self):
         if self.bmc:
-            self.bmc.redfish.logout()
+            self.bmc.close()
 
 
 class ConfigError(Exception):
