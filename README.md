@@ -44,7 +44,7 @@ options:
 There are 3 configuration files for bios_tool: a host configuration file (`host_config.csv`), a BIOS settings file (`bios_settings.yml`), and a defaults database (`defaults-db.yml`). They are looked for in the current folder.
 You can either use these default names or override them with `-c`/`--hostconfigfile`, `-b`/`--bios` and `--defaults-database`, or list the BMCs with `--bmc-ips` instead of a host file (see Command-line Host Specification below).
 
-bios_tool needs Python 3.9 or later and the packages in `requirements.txt`; `pyinstall.sh` builds a single binary that needs neither.
+bios_tool needs Python 3.9 or later (its tests run on 3.11 and 3.13) and the packages in `requirements.txt`; `pyinstall.sh` builds a single binary that needs neither.
 ### host_config.csv
 The host configuration file lists the BMCs (IPMI, iLO, iDRAC, XCC) and their logon credentials. It may be CSV or YAML, whatever its name: bios_tool reads it as YAML if it holds a `hosts` list, and otherwise as CSV, which must start with a `name,user,password` line. It holds BMC passwords, so keep it readable only by you, and do not commit it.
 
