@@ -21,6 +21,30 @@ def trim_supermicro_key(key):
     return key[:-5] if (key[-5] == "_" and is_hex(key[-4])) else key
 
 
+CPU_VENDOR_IDS = {"AuthenticAMD": "AMD", "GenuineIntel": "Intel"}
+CPU_NAME_HINTS = [("AMD", "AMD"), ("EPYC", "AMD"), ("INTEL", "Intel"), ("XEON", "Intel"),
+                  ("AMPERE", "ARM"), ("NEOVERSE", "ARM"), ("GRACE", "ARM"), ("ARM", "ARM")]
+
+
+def cpu_arch(processor):
+    """The bios_settings.yml architecture (AMD, Intel or ARM) of a Redfish Processor, or None if it is not a CPU or
+    cannot be told. The Redfish fields come first; BMCs that leave them out are recognised by the CPU's name."""
+    if processor.get("ProcessorType", "CPU") != "CPU" or processor.get("Status", {}).get("State") == "Absent":
+        return None
+    arch = str(processor.get("ProcessorArchitecture") or "").upper()
+    instruction_set = str(processor.get("InstructionSet") or "").upper()
+    if arch == "ARM" or instruction_set.startswith("ARM"):
+        return "ARM"
+    vendor_id = (processor.get("ProcessorId") or {}).get("VendorId")
+    if vendor_id in CPU_VENDOR_IDS:
+        return CPU_VENDOR_IDS[vendor_id]
+    name = f"{processor.get('Manufacturer') or ''} {processor.get('Model') or ''}".upper()
+    for hint, cpu in CPU_NAME_HINTS:
+        if hint in name:
+            return cpu
+    return None
+
+
 def trim_supermicro_dict(settings_dict):
     new_settings_dict = dict()
     for key, value in settings_dict.items():
@@ -85,10 +109,11 @@ class RedFishBMC(object):
         # get Processors
         self.proc_uri = self.systems_members_response.dict['Processors']['@odata.id']
         self.proc_data = self.redfish.get(self.proc_uri)
-        self.proc_members_uri = next(iter(self.proc_data.dict['Members']))['@odata.id']
-        self.proc_members_response = self.redfish.get(self.proc_members_uri)  # ie: /redfish/v1/Processors/1
-        # note the architecture
-        self.arch = "AMD" if self.proc_members_response.dict.get("Model", None)[0] == 'A' else "Intel"
+        self.arch = None
+        for member in self.proc_data.dict.get('Members', []):
+            self.arch = cpu_arch(self.redfish.get(member['@odata.id']).dict)
+            if self.arch is not None:
+                break
 
         # fetch the actual BIOS settings
         self.bios_uri = self.systems_members_response.dict['Bios']['@odata.id']
