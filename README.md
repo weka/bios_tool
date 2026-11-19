@@ -17,13 +17,13 @@ optional arguments:
   --bmc-config          Configure the BMCs to allow RedFish access
   --fix                 Correct any bios settings that do not match the definition
   --reboot              Reboot the servers with BIOS changes waiting to be applied, after asking
-  -y, --yes             Answer yes to the question before rebooting
+  -y, --yes             Answer yes to the question before rebooting or resetting
   --dump                Print out BIOS settings only
   --save-defaults       Save default BIOS settings to defaults-database - should be factory reset values
   --defaults-database DEFAULTS_DATABASE
                         Filename of the factory defaults-database
   -f, --force           Force overwriting existing BIOS settings and such
-  --reset-bios          Reset BIOS to default settings. To also reboot, add the --reboot option
+  --reset-bios          Reset the BIOS to factory defaults, after asking. To also reboot, add the --reboot option
   --diff DIFF DIFF      Compare 2 hosts BIOS settings
   --diff-defaults       Compare hosts BIOS settings to factory defaults
   --bmc-ips [BMC_IPS ...]
