@@ -1,5 +1,6 @@
 # BMC setup.py - setup the BMC for the host; check for brand and ensure redfish and ipmi over lan are enabled
 import os
+import re
 import time
 import subprocess
 
@@ -54,9 +55,9 @@ def lenovo_parse_return(string):
 def lenovo_user_id(users_output, user):
     """The number of the account named user in the output of a Lenovo XCC 'users' command, or None."""
     for line in users_output.splitlines():
-        fields = line.replace(".", " ").split()
-        if len(fields) > 1 and fields[0].isdigit() and user in fields[1:2]:
-            return fields[0]
+        match = re.match(r"\s*(\d+)\.?\s+(\S+)", line)
+        if match and match.group(2) == user:
+            return match.group(1)
     return None
 
 

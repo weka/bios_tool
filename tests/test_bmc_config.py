@@ -8,6 +8,12 @@ import bios_tool
     ("1. USERID Read/Write\n2. ADMIN2 Read/Write\n3. ADMIN Read/Write\n", "ADMIN", "3"),
     ("1 USERID Read/Write\n2 ADMIN2 Read/Write\n", "ADMIN", None),
     ("system> users\n1. USERID Read/Write\n", "USERID", "1"),
+    # user names may hold dots; only the dot after the account number is punctuation
+    ("1. USERID Read/Write\n2. svc.admin Read/Write\n", "svc.admin", "2"),
+    ("1. a.b.c Read/Write\n", "a.b.c", "1"),
+    ("1. svc.admin Read/Write\n", "admin", None),
+    ("1. svc.admin Read/Write\n", "svc", None),
+    ("12 svc.admin Read/Write\n", "svc.admin", "12"),
 ])
 def test_lenovo_user_id_matches_the_whole_name(output, user, user_id):
     assert BMCsetup.lenovo_user_id(output, user) == user_id
