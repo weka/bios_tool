@@ -71,3 +71,62 @@ def test_staged_settings_on_other_vendors_need_no_job(tool):
     bmc.pending()["SMTControl_0037"] = "Disabled"
     assert tool.run("--fix") == 0
     assert bmc.posts == []
+
+
+# Bugbot: "failed connect leaks BMC sessions". A BIOS resource without Attributes made connect fail after login.
+@pytest.mark.parametrize("attributes", ["missing", None, "not a mapping"])
+def test_a_bios_without_attributes_fails_the_server_and_logs_out(tool, attributes):
+    docs = dell()
+    if attributes == "missing":
+        del docs[DELL_BIOS]["Attributes"]
+    else:
+        docs[DELL_BIOS]["Attributes"] = attributes
+    [bmc] = tool.servers(SETTINGS, docs)
+    assert tool.run() == 1
+    assert "could not be reached" in tool.log
+    assert bmc.logged_in and bmc.logged_out
+
+
+# Bugbot: "null processor Status crashes discovery", and the same for every other optional Redfish object a BMC
+# may send as null.
+SYSTEM = "/redfish/v1/Systems/System.Embedded.1"
+
+
+@pytest.mark.parametrize("doc, key", [
+    (f"{SYSTEM}/Processors/CPU1", "Status"),
+    (f"{SYSTEM}/Processors/CPU1", "ProcessorId"),
+    (SYSTEM, "Actions"),
+    (DELL_BIOS, "Actions"),
+    (DELL_BIOS, "@Redfish.Settings"),
+])
+def test_null_optional_objects_do_not_stop_a_check(tool, doc, key):
+    docs = dell(LogicalProc="Disabled")
+    docs[doc][key] = None
+    [bmc] = tool.servers(SETTINGS, docs)
+    assert tool.run() == 0
+    assert "Connected to 10.0.0.1" in tool.log
+
+
+def test_a_null_processors_link_leaves_the_architecture_unknown(tool):
+    docs = dell(LogicalProc="Disabled")
+    docs[SYSTEM]["Processors"] = None
+    tool.servers(SETTINGS, docs)
+    assert tool.run() == 1
+    assert "Connected to 10.0.0.1" in tool.log
+    assert "no 'None' architecture" in tool.log
+
+
+def test_a_null_settings_object_link_is_looked_for_where_vendors_keep_it(tool):
+    docs = dell()
+    docs[DELL_BIOS]["@Redfish.Settings"]["SettingsObject"] = None
+    [bmc] = tool.servers(SETTINGS, docs)
+    assert tool.run("--fix") == 0
+    assert bmc.patches[0][0] == f"{DELL_BIOS}/Settings"
+
+
+def test_a_refusal_with_a_null_error_is_still_reported(tool, monkeypatch):
+    from fake_bmc import response
+    [bmc] = tool.servers(SETTINGS, dell())
+    monkeypatch.setattr(bmc, "patch", lambda uri, body, headers=None: response(400, {"error": None}))
+    assert tool.run("--fix") == 1
+    assert "refused the BIOS changes (HTTP 400)" in tool.log

@@ -17,6 +17,16 @@ def ok(resp):
     return resp.status in (200, 201, 202, 203, 204)
 
 
+def field(doc, *keys):
+    """doc[keys[0]][keys[1]]..., or None where a level is missing, null or not an object: BMCs send optional
+    Redfish objects as null as often as they leave them out."""
+    for key in keys:
+        if not isinstance(doc, dict):
+            return None
+        doc = doc.get(key)
+    return doc
+
+
 def same(a, b):
     """Whether two BIOS values are equal, as BMCs and YAML spell them: "1" and 1, False and false."""
     def norm(value):
@@ -32,13 +42,13 @@ CPU_NAME_HINTS = [("AMD", "AMD"), ("EPYC", "AMD"), ("INTEL", "Intel"), ("XEON", 
 def cpu_arch(processor):
     """The bios_settings.yml architecture (AMD, Intel or ARM) of a Redfish Processor, or None if it is not a CPU or
     cannot be told. The Redfish fields come first; BMCs that leave them out are recognised by the CPU's name."""
-    if processor.get("ProcessorType", "CPU") != "CPU" or processor.get("Status", {}).get("State") == "Absent":
+    if processor.get("ProcessorType", "CPU") != "CPU" or field(processor, "Status", "State") == "Absent":
         return None
     arch = str(processor.get("ProcessorArchitecture") or "").upper()
     instruction_set = str(processor.get("InstructionSet") or "").upper()
     if arch == "ARM" or instruction_set.startswith("ARM"):
         return "ARM"
-    vendor_id = (processor.get("ProcessorId") or {}).get("VendorId")
+    vendor_id = field(processor, "ProcessorId", "VendorId")
     if vendor_id in CPU_VENDOR_IDS:
         return CPU_VENDOR_IDS[vendor_id]
     name = f"{processor.get('Manufacturer') or ''} {processor.get('Model') or ''}".upper()
@@ -102,7 +112,7 @@ class RedFishBMC(object):
         self.model = system.get('Model')
         self.bios_version = system.get('BiosVersion')
 
-        reset = system.get('Actions', {}).get('#ComputerSystem.Reset', {})
+        reset = field(system, 'Actions', '#ComputerSystem.Reset') or {}
         self.reset_target = reset.get('target')
         self.system_reset_types = reset.get('ResetType@Redfish.AllowableValues')
         if self.system_reset_types is None and '@Redfish.ActionInfo' in reset:
@@ -112,23 +122,25 @@ class RedFishBMC(object):
         self.system_reset_types = self.system_reset_types or []
 
         self.arch = None
-        processors = system.get('Processors', {}).get('@odata.id')
+        processors = field(system, 'Processors', '@odata.id')
         for member in self._members(processors) if processors else []:
             self.arch = cpu_arch(self.redfish.get(member).dict)
             if self.arch is not None:
                 break
 
-        if 'Bios' not in system:
+        self.bios_uri = field(system, 'Bios', '@odata.id')
+        if not self.bios_uri:
             raise Exception(f"{self.name} does not offer its BIOS settings over Redfish")
-        self.bios_uri = system['Bios']['@odata.id']
         self.bios_data = self.redfish.get(self.bios_uri)
         if self.bios_data.status != 200 or 'error' in self.bios_data.dict:
-            info = self.bios_data.dict.get('error', {}).get('@Message.ExtendedInfo', '')
+            info = field(self.bios_data.dict, 'error', '@Message.ExtendedInfo') or ''
             raise Exception(f"Error fetching BIOS settings for {self.name} (HTTP {self.bios_data.status}): {info}")
-        self.reset_bios_uri = self.bios_data.dict.get('Actions', {}).get('#Bios.ResetBios', {}).get('target')
-        settings = self.bios_data.dict.get('@Redfish.Settings') or {}
-        self.supported_apply_times = settings.get('SupportedApplyTimes')
-        self.bios_settings_uri = settings.get('SettingsObject', {}).get('@odata.id') or self._find_settings_object()
+        if not isinstance(self.bios_data.dict.get('Attributes'), dict):
+            raise Exception(f"{self.name} sent its BIOS resource without its settings (Attributes)")
+        self.reset_bios_uri = field(self.bios_data.dict, 'Actions', '#Bios.ResetBios', 'target')
+        settings = self.bios_data.dict.get('@Redfish.Settings')
+        self.supported_apply_times = field(settings, 'SupportedApplyTimes')
+        self.bios_settings_uri = field(settings, 'SettingsObject', '@odata.id') or self._find_settings_object()
 
         managers = self._members(root['Managers']['@odata.id']) if 'Managers' in root else []
         self.managers_members_uri = managers[0] if managers else None
@@ -170,8 +182,8 @@ class RedFishBMC(object):
             refused = [key for key, value in settings_dict.items()
                        if not ok(self._patch_settings({key: value}, on_reset))]
         elif not ok(resp):
-            messages = [info.get('Message', '') for info in
-                        resp.dict.get('error', {}).get('@Message.ExtendedInfo', [])]
+            messages = [field(info, 'Message') or '' for info in
+                        field(resp.dict, 'error', '@Message.ExtendedInfo') or []]
             log.error(f"{self.name} refused the BIOS changes (HTTP {resp.status}): {' '.join(messages)}")
             return False
         if refused:

@@ -116,7 +116,7 @@ def _server(system_id, manufacturer, model, cpu, attributes, settings_object, ap
                  "Processors": {"@odata.id": f"{system}/Processors"},
                  "Bios": {"@odata.id": f"{system}/Bios"}},
         f"{system}/Processors": {"Members": [{"@odata.id": f"{system}/Processors/CPU1"}]},
-        f"{system}/Processors/CPU1": cpu,
+        f"{system}/Processors/CPU1": copy.deepcopy(cpu),
         f"{system}/Bios": {"Attributes": dict(attributes),
                            "Actions": {"#Bios.ResetBios": {"target": f"{system}/Bios/Actions/Bios.ResetBios"}},
                            "@Redfish.Settings": {"SettingsObject": {"@odata.id": f"{system}/Bios/{settings_object}"}}},
