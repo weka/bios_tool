@@ -18,8 +18,8 @@ the rest.
    carries it out, after asking.
 2. **Never silently pass.** Unknown servers, unmatched settings, values the BMC would refuse, unreachable BMCs and
    unconfirmed writes are errors with a non-zero exit, named per server.
-3. **Hard to use wrongly.** Verbs instead of flag combinations; no credentials in files; one profile chosen per server,
-   shown in the plan.
+3. **Hard to use wrongly.** Verbs instead of flag combinations; a host file that is easy to edit but hard to leak; one
+   profile chosen per server, shown in the plan.
 4. **Vendor quirks in one place each.** A new BMC family is one file, not edits across the write path.
 5. **Tested without hardware**, against a fake Redfish service fed with real captures.
 6. **One binary, linked into `wekactl-platform`** ([ADR 0001](adr/0001-go-library-linked-into-wekactl-platform.md)).
@@ -75,7 +75,7 @@ with tatool.
 | `bios-tool capture` | Write a server's factory defaults as a file in bios-contrib's layout, without identifiers | No |
 | `bios-tool profiles` | List the profiles found, their bases, and which servers each matches | No |
 
-Common options: `--hosts FILE` or `--host ADDR...`, `--profiles DIR` (repeatable), `--yes`, `--json`, `--ca-file`,
+Common options: `--hosts FILE`, `--only NAME...` (work on some of its servers), `--profiles DIR` (repeatable), `--yes`, `--json`, `--ca-file`,
 `--parallel N`. Exit status: 0 done (or, for `check`, nothing to change), 1 something left undone, 2 usage error,
 3 `check` found changes to make.
 
@@ -103,11 +103,35 @@ settings:
 - Files are read strictly: YAML without implicit booleans surprises (`Off` must be quoted), duplicate keys and unknown
   fields rejected.
 
-## Inventory and credentials (proposed)
+## Host file and passwords
 
-`--hosts FILE` lists servers (`address`, optional `user`, optional `name`); never passwords. The password comes from
-`$BIOS_TOOL_BMC_PASSWORD`, a prompt, or `--password-file` (refused unless readable only by its owner). Per-server
-passwords, when sites need them, come from a credentials file of the same kind, kept out of any repo.
+Sites increasingly give every BMC its own password, so the host file carries them
+([ADR 0006](adr/0006-passwords-in-a-guarded-host-file.md)), as CSV (one row per BMC, easy in a spreadsheet) or YAML:
+
+```yaml
+# hosts.yml: never commit this file; hosts.example.yml shows the format
+defaults:
+  user: root
+hosts:
+  - address: 10.0.0.11
+    name: node01
+    password: s3cret-11            # per-BMC
+  - address: 10.0.0.12
+    name: node02
+    user: admin
+    password: s3cret-12
+```
+
+The host file is the only way to give bios-tool its servers and their passwords. A `defaults:` password covers sites
+with one password for every BMC; a server with no password, its own or from `defaults:`, is an error. bios-tool
+refuses a host file that:
+
+- other users can read (as ssh refuses a key): the error gives the `chmod 600` to run;
+- git tracks, or that sits in a git work tree without being ignored, so it cannot be committed by accident;
+- still holds a placeholder password (`<password>`, `changeme`, `example`…) copied from the example file.
+
+Passwords never reach the log, the plan, `--json` output or a capture. The repo ships only `hosts.example.yml` and
+`hosts.example.csv`, with placeholders.
 
 ## Running
 
@@ -139,6 +163,12 @@ into profiles for bios-contrib, so no tuned setting is retyped by hand.
 1. The command and option names above, and whether `check` should exit 3 when it finds changes.
 2. Whether `--bmc-config` (enabling Redfish and IPMI over SSH with racadm, XCC and iLO commands) is kept, as a
    `bmc-setup` command, or dropped.
-3. Per-server credentials: needed at sites, or is one password per run enough?
-4. Where cs-platform-tools installs bios-contrib's profiles, and how they are pinned.
-5. Whether the profile selection rule (model beats manufacturer and CPU) is enough, or profiles need a priority.
+3. Where cs-platform-tools installs bios-contrib's profiles, and how they are pinned.
+4. Whether the profile selection rule (model beats manufacturer and CPU) is enough, or profiles need a priority.
+
+## Future work
+
+- **Password managers.** Reading BMC passwords from a password manager would keep them out of the host file
+  altogether. Not in the rewrite: no customer install has asked for it yet, and a command per host is error-prone to
+  write for more than a handful of BMCs ([ADR 0006](adr/0006-passwords-in-a-guarded-host-file.md)). Worth adding when
+  sites use one, preferably as one integration that looks up every BMC by its name or address.
