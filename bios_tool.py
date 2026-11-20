@@ -37,12 +37,12 @@ class Server(object):
 
     def connect(self):
         try:
-            # need to add a timeout here...
-            self.bmc = RedFishBMC(self.hostname, username=self.username, password=self.password, ca_file=self.ca_file)
-            self.bios_settings = self.bmc.get_bios_settings()
-            self.manufacturer = self.bmc.manufacturer
-            self.arch = self.bmc.arch
-            self.model = self.bmc.model
+            bmc = RedFishBMC(self.hostname, username=self.username, password=self.password, ca_file=self.ca_file)
+            self.bmc = bmc
+            self.bios_settings = bmc.get_bios_settings()
+            self.manufacturer = bmc.manufacturer
+            self.arch = bmc.arch
+            self.model = bmc.model
             log.info(f"Connected to {self.hostname}")
             return self
         except redfish.rest.v1.InvalidCredentialsError:
@@ -52,6 +52,9 @@ class Server(object):
         except Exception as exc:
             log.error(f"Error opening connections to {self.hostname}: {exc}")
 
+        # a server that did not connect is not in the list close_sessions walks, so its session is closed here
+        self.close()
+        self.bmc = None
         return None
 
 
